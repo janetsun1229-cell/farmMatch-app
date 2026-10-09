@@ -1,0 +1,69 @@
+{
+  "free_level_cap": 20,
+  "total_levels": 50,
+  "tray_slots": 7,
+  "hold_max": 6,
+  "move_take_max": 3,
+  "card_scale_vs_l1": 0.85,
+  "board_max_columns": 6,
+  "rotation_deg": 0,
+  "copies_per_type": 6,
+  "pile_internal_shift_w": 0.1,
+  "neighbor_gap_max_w": 0.125,
+  "pile_min_distinct_types": 3,
+  "ads_enabled": false,
+  "power_charge_mode": "per_level_plus_bank",
+  "powers": {
+    "move_unlock_level": 5,
+    "undo_unlock_level": 8,
+    "shuffle_unlock_level": 12,
+    "unlock_grant_uses": 3,
+    "per_level_uses": 3
+  },
+  "timing": {
+    "fly_seconds": 0.22,
+    "tray_bounce_scale": 1.08,
+    "match_pop_scale": 1.4,
+    "spark_seconds": 0.35,
+    "spark_count_min": 6,
+    "spark_count_max": 8,
+    "confetti_seconds": 1.5
+  },
+  "veil_opacity_by_depth": {
+    "1": 0.25,
+    "2": 0.35,
+    "3": 0.45,
+    "4_plus": 0.55
+  },
+  "jitter_bands": [
+    { "from": 3, "to": 10, "max_x_w": 0.25, "max_y_h": 0.2 },
+    { "from": 11, "to": 25, "max_x_w": 0.333, "max_y_h": 0.25 },
+    { "from": 26, "to": 50, "max_x_w": 0.4, "max_y_h": 0.333 }
+  ],
+  "difficulty_bands": [
+    { "from": 1, "to": 2, "types": 4, "cards": 24, "piles": 0, "pile_size": 0 },
+    { "from": 3, "to": 5, "types": 4, "cards": 24, "piles": 2, "pile_size": 4 },
+    { "from": 6, "to": 10, "types": 6, "cards": 36, "piles": 2, "pile_size": 4 },
+    { "from": 11, "to": 15, "types": 8, "cards": 48, "piles": 3, "pile_size": 5 },
+    { "from": 16, "to": 25, "types": 10, "cards": 60, "piles": 3, "pile_size": 5 },
+    { "from": 26, "to": 40, "types": 12, "cards": 72, "piles": 4, "pile_size": 6 },
+    { "from": 41, "to": 50, "types": 15, "cards": 90, "piles": 5, "pile_size": 7 }
+  ],
+  "soft_help": {
+    "tray_warn_slots_left": 1,
+    "dead_board_tray_min": 5
+  },
+  "iap": {
+    "pack_small": { "price_usd": 2.99, "each": 5, "consumable": true, "title": "Small kit" },
+    "pack_medium": { "price_usd": 4.99, "each": 12, "consumable": true, "title": "Mid kit" },
+    "pack_large": { "price_usd": 9.99, "each": 30, "consumable": true, "title": "Large kit" },
+    "remove_ads": { "price_usd": 2.99, "consumable": false, "title": "Remove Ads" },
+    "barn_bundle": { "price_usd": 1.99, "levels": [21, 35], "consumable": false, "title": "Barn Bundle" },
+    "harvest_bundle": { "price_usd": 2.99, "levels": [36, 50], "consumable": false, "title": "Harvest Bundle" }
+  },
+  "api": {
+    "base_url": "",
+    "config_path": "/v1/config",
+    "verify_path": "/v1/iap/verify"
+  }
+}
