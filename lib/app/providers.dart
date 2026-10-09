@@ -3,6 +3,19 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../features/auth/domain/account_link.dart';
+import '../features/auth/application/bind_account.dart';
+import '../features/auth/data/auth_repository_impl.dart';
+import '../features/auth/data/fake_auth_adapter.dart';
+import '../features/auth/domain/auth_provider_kind.dart';
+import '../features/auth/domain/auth_repository.dart';
+import '../features/auth/domain/ports/auth_port.dart';
+import '../features/auth/presentation/auth_state.dart';
+import '../features/cloud_save/application/sync_cloud_save.dart';
+import '../features/cloud_save/data/fake_cloud_save_adapter.dart';
+import '../features/cloud_save/data/local_revision_store.dart';
+import '../features/cloud_save/data/prefs_cloud_store.dart';
+import '../features/cloud_save/domain/ports/cloud_save_port.dart';
 import '../features/config/application/refresh_config.dart';
 import '../features/config/data/config_repository_impl.dart';
 import '../features/config/data/remote_config_api.dart';
@@ -19,6 +32,8 @@ import '../features/iap/data/fake_store_client.dart';
 import '../features/iap/data/iap_api.dart';
 import '../features/iap/domain/iap_verifier.dart';
 import '../features/iap/domain/store_client.dart';
+import '../features/gift/data/fake_gift_adapter.dart';
+import '../features/gift/domain/ports/gift_port.dart';
 import '../features/identity/application/bootstrap_identity.dart';
 import '../features/identity/application/update_nickname.dart';
 import '../features/identity/data/identity_repository_impl.dart';
@@ -32,19 +47,24 @@ import '../features/progress/data/progress_repository_impl.dart';
 import '../features/progress/domain/player_progress.dart';
 import '../features/progress/domain/repositories/progress_repository.dart';
 
-const kUseFakeStore =
-    bool.fromEnvironment('USE_FAKE_STORE', defaultValue: true);
+const kUseFakeStore = bool.fromEnvironment(
+  'USE_FAKE_STORE',
+  defaultValue: true,
+);
 const kApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
 const kPackageName = 'com.farmmatch.farm_match';
 
-final prefsProvider =
-    Provider<SharedPreferences>((ref) => throw UnimplementedError());
+final prefsProvider = Provider<SharedPreferences>(
+  (ref) => throw UnimplementedError(),
+);
 
-final initialConfigProvider =
-    Provider<GameConfig>((ref) => throw UnimplementedError());
+final initialConfigProvider = Provider<GameConfig>(
+  (ref) => throw UnimplementedError(),
+);
 
-final configProvider =
-    NotifierProvider<ConfigController, GameConfig>(ConfigController.new);
+final configProvider = NotifierProvider<ConfigController, GameConfig>(
+  ConfigController.new,
+);
 
 class ConfigController extends Notifier<GameConfig> {
   @override
@@ -66,10 +86,9 @@ class _Refresh {
   const _Refresh();
 
   Future<GameConfig> call(ConfigRepositoryImpl repository) {
-    return RefreshConfig(repository).call(
-      appVersion: '1.0.0',
-      platform: Platform.isIOS ? 'ios' : 'android',
-    );
+    return RefreshConfig(
+      repository,
+    ).call(appVersion: '1.0.0', platform: Platform.isIOS ? 'ios' : 'android');
   }
 }
 
@@ -89,16 +108,17 @@ final entitlementRepoProvider = Provider<EntitlementRepository>(
   (ref) => EntitlementRepositoryImpl(ref.watch(prefsProvider)),
 );
 
-final identityProvider =
-    NotifierProvider<IdentityController, LocalUser>(IdentityController.new);
+final identityProvider = NotifierProvider<IdentityController, LocalUser>(
+  IdentityController.new,
+);
 
 class IdentityController extends Notifier<LocalUser> {
   @override
   LocalUser build() => BootstrapIdentity(ref.read(identityRepoProvider)).call();
 
   Future<String?> rename(String raw) async {
-    final result =
-        await UpdateNickname(ref.read(identityRepoProvider)).call(raw);
+    final result = await UpdateNickname(ref.read(identityRepoProvider))
+        .call(raw);
     if (!result.ok) return result.error;
     state = result.user!;
     return null;
@@ -106,7 +126,8 @@ class IdentityController extends Notifier<LocalUser> {
 }
 
 final progressProvider = NotifierProvider<ProgressController, PlayerProgress>(
-    ProgressController.new);
+  ProgressController.new,
+);
 
 class ProgressController extends Notifier<PlayerProgress> {
   @override
@@ -133,21 +154,26 @@ class ProgressController extends Notifier<PlayerProgress> {
   }
 
   Future<void> clearLevel(int level) async {
-    state = await ClearLevel(ref.read(progressRepoProvider)).call(level);
+    await ref.read(localRevisionProvider).touch();
+    await ClearLevel(ref.read(progressRepoProvider)).call(level);
+    await ref.read(authStateProvider.notifier).syncFromCloud();
   }
 
   void reload() => state = ref.read(progressRepoProvider).load();
 }
 
 final inventoryProvider = NotifierProvider<InventoryController, ToolInventory>(
-    InventoryController.new);
+  InventoryController.new,
+);
 
 class InventoryController extends Notifier<ToolInventory> {
   @override
   ToolInventory build() => ref.read(inventoryRepoProvider).load();
 
   Future<void> consume(Power power) async {
+    await ref.read(localRevisionProvider).touch();
     state = await ref.read(inventoryRepoProvider).consume(power);
+    await ref.read(authStateProvider.notifier).syncFromCloud();
   }
 
   void reload() => state = ref.read(inventoryRepoProvider).load();
@@ -155,8 +181,8 @@ class InventoryController extends Notifier<ToolInventory> {
 
 final entitlementsProvider =
     NotifierProvider<EntitlementsController, Entitlements>(
-  EntitlementsController.new,
-);
+      EntitlementsController.new,
+    );
 
 class EntitlementsController extends Notifier<Entitlements> {
   @override
@@ -177,9 +203,10 @@ final verifierProvider = Provider<IapVerifier>((ref) {
   final config = ref.watch(configProvider);
   final base = kApiBaseUrl.isNotEmpty ? kApiBaseUrl : config.api.baseUrl;
   return IapApi(
-      baseUrl: base,
-      verifyPath: config.api.verifyPath,
-      allowOfflineStub: base.isEmpty);
+    baseUrl: base,
+    verifyPath: config.api.verifyPath,
+    allowOfflineStub: base.isEmpty,
+  );
 });
 
 final purchaseProductProvider = Provider<PurchaseProduct>((ref) {
@@ -197,11 +224,91 @@ final restorePurchasesProvider = Provider<RestorePurchases>((ref) {
   return RestorePurchases(
     store: ref.watch(storeClientProvider),
     verifier: ref.watch(verifierProvider),
-    restoreEntitlements:
-        RestoreEntitlements(ref.watch(entitlementRepoProvider)),
+    restoreEntitlements: RestoreEntitlements(
+      ref.watch(entitlementRepoProvider),
+    ),
     platform: Platform.isIOS ? 'ios' : 'android',
     packageName: kPackageName,
   );
 });
 
 String get storePlatform => Platform.isIOS ? 'ios' : 'android';
+
+final localRevisionProvider = Provider<LocalRevisionStore>(
+  (ref) => LocalRevisionStore(ref.watch(prefsProvider)),
+);
+
+final authRepositoryProvider = Provider<AuthRepository>(
+  (ref) => AuthRepositoryImpl(ref.watch(prefsProvider)),
+);
+
+final authPortProvider = Provider<AuthPort>((ref) => FakeAuthAdapter());
+
+final cloudSavePortProvider = Provider<CloudSavePort>(
+  (ref) => FakeCloudSaveAdapter(PrefsCloudStore(ref.watch(prefsProvider))),
+);
+
+final giftPortProvider = Provider<GiftPort>(
+  (ref) => FakeGiftAdapter(preferences: ref.watch(prefsProvider)),
+);
+
+final syncCloudSaveProvider = Provider<SyncCloudSave>((ref) {
+  return SyncCloudSave(
+    auth: ref.watch(authRepositoryProvider),
+    cloud: ref.watch(cloudSavePortProvider),
+    progress: ref.watch(progressRepoProvider),
+    inventory: ref.watch(inventoryRepoProvider),
+    entitlements: ref.watch(entitlementRepoProvider),
+    revision: ref.watch(localRevisionProvider),
+  );
+});
+
+final authStateProvider = NotifierProvider<AuthController, AuthViewState>(
+  AuthController.new,
+);
+
+class AuthController extends Notifier<AuthViewState> {
+  @override
+  AuthViewState build() => _read();
+
+  AuthViewState _read() {
+    final repository = ref.read(authRepositoryProvider);
+    return AuthViewState(
+      link: repository.loadLink(),
+      cloudSaveDismissed: repository.cloudSaveDismissed,
+      inviteDismissed: repository.inviteDismissed,
+    );
+  }
+
+  Future<String?> bind(AuthProviderKind provider) async {
+    try {
+      await BindAccount(
+        port: ref.read(authPortProvider),
+        repository: ref.read(authRepositoryProvider),
+      ).call(provider);
+      state = _read();
+      await syncFromCloud();
+      return null;
+    } catch (error) {
+      if (error is AuthFailure) return error.message;
+      return 'Could not link right now. You can keep playing.';
+    }
+  }
+
+  Future<void> dismissCloudSave() async {
+    await ref.read(authRepositoryProvider).dismissCloudSavePrompt();
+    state = _read();
+  }
+
+  Future<void> dismissInvite() async {
+    await ref.read(authRepositoryProvider).dismissInvitePrompt();
+    state = _read();
+  }
+
+  Future<void> syncFromCloud() async {
+    await ref.read(syncCloudSaveProvider).call();
+    ref.read(progressProvider.notifier).reload();
+    ref.read(inventoryProvider.notifier).reload();
+    ref.read(entitlementsProvider.notifier).reload();
+  }
+}

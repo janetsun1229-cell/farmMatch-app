@@ -18,7 +18,11 @@ class _FarmMatchAppState extends ConsumerState<FarmMatchApp> {
   void initState() {
     super.initState();
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
-    Future<void>.microtask(() => ref.read(configProvider.notifier).refresh());
+    Future<void>.microtask(() async {
+      await ref.read(configProvider.notifier).refresh();
+      if (!mounted) return;
+      await ref.read(authStateProvider.notifier).syncFromCloud();
+    });
   }
 
   @override

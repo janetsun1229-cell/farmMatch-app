@@ -1,6 +1,6 @@
 # Farm Match
 
-Portrait triple-match tile game for iOS and Android. Players clear a stacked farm table into a 7-slot tray. Progress, tools, and the guest nickname stay on the device. There is no login and no cloud save.
+Portrait triple-match tile game for iOS and Android. Players clear a stacked farm table into a 7-slot tray. The game starts as a guest and stays playable offline. Linking X or Facebook saves progress, tool counts, and purchases to a cloud record that can be restored on a new install.
 
 ## Run
 
@@ -37,6 +37,9 @@ lib/
   core/           theme, scroll behavior, sound
   features/
     identity/     guest id + editable nickname
+    auth/         optional X or Facebook link (fake OAuth in CI)
+    cloud_save/   sync progress, tools, entitlements when linked
+    gift/         friend invite + daily free tool gifts
     progress/     cleared level, mute, hint flags
     inventory/    Move / Undo / Shuffle bank
     entitlements/ remove ads, Barn Bundle, Harvest Bundle
@@ -45,7 +48,7 @@ lib/
     game/         deal, cover, tray, powers
     home/         home-first entry
     store_ui/     Farm Stand
-    settings/     nickname, mute, Restore Purchases
+    settings/     nickname, account, friends, mute, Restore Purchases
   shared/
 ```
 
@@ -58,7 +61,11 @@ Each feature is split into `presentation`, `application`, `domain`, and `data`. 
 - Cards stay at 85% of the level-1 size (`card_scale_vs_l1`). Rotation is 0.
 - Veil opacity follows cover depth: 25%, 35%, 45%, 55%.
 - Unlocked powers start each level with 3 uses. Bought kits add a local bank on top (`power_charge_mode`: `per_level_plus_bank`).
-- Restore Purchases restores only `remove_ads`, `barn_bundle`, and `harvest_bundle`.
+- Restore Purchases restores only `remove_ads`, `barn_bundle`, and `harvest_bundle`. It does not restore level progress or tool counts.
+- After a win on level 5, a skippable sheet offers X or Facebook for cloud save. After a win on level 8, a guest sees that sheet again with friend gifts. There is no forced login.
+- Linked accounts sync cleared level, Move / Undo / Shuffle counts, and the three non-consumable entitlements. Guest play never calls the cloud port.
+- Cloud merge keeps the higher cleared level. Tool counts follow the later `updatedAt` (a tie keeps the larger count of each tool). Entitlements are OR-combined so a purchase is not dropped. Mute, hints, and nickname stay on the device. A fresh install uses an epoch clock, so the cloud row restores the account.
+- Friends: one tool type per day, up to 3 sends from a free pool (your own tools are not spent), and at most one gift from you to the same friend per day.
 
 Deals use the HTML prototype’s seeded layout (level id is the seed). `flutter test` checks all 50 deals against `test/fixtures/deals.json` and clears each level by its known solution order.
 

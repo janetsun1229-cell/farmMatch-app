@@ -1,6 +1,6 @@
 # Farm Match — 前后端模块技术说明
 
-> 对齐架构方案 v1.1.1（免登录本机进度；Flutter；腾讯云国际站；后台仅 config + IAP 验单）。  
+> 对齐架构方案 v1.1.1，并以文末 **§8** 与 `GAME_FEATURES.md` v1.1（§3.7.1 / §3.7.1b / §5.14）、`TECH_ARCHITECTURE.md` 修订附记 v1.2 覆盖旧的「不做云同步」句子。  
 > 2026-10-09｜开发  
 > Notion：[前后端模块技术说明](https://app.notion.com/p/3f429db626158135995ee327fef1fae0)
 
@@ -60,13 +60,13 @@ farm_match_api/          # NestJS
 - **域**：`LocalUser`（id、nickname、createdAt）  
 - **用例**：`BootstrapIdentity`（首次生成）、`UpdateNickname`  
 - **存储**：`flutter_secure_storage` / Hive / Isar；昵称可普通本地 DB  
-- **扩展点**：日后若加绑定登录，只新增 `AuthProvider` 适配器，不改玩法  
+- **扩展点**：绑定登录走 `auth` 的 `AuthPort`，不改玩法  
 
 #### `progress`（本机进度）
 
 - **域**：`clearedLevel`、关卡统计、settings（muted 等）  
 - **用例**：`LoadProgress`、`SaveProgress`、`ClearLevel`  
-- **规则**：仅写本机；**不做**云同步；卸载即无（产品已定）  
+- **规则**：游客只写本机，卸载不找回。已绑定后由 `cloud_save` 同步最高通关（见 §8）  
 
 #### `inventory`
 
@@ -102,7 +102,7 @@ farm_match_api/          # NestJS
 #### `home` / `store_ui` / `settings`
 
 - 首页方钮未解锁 → 拉起 store 购买提示  
-- Settings：改昵称、英文按钮 `Restore Purchases`、静音等  
+- Settings：改昵称、账号绑定状态、好友互赠入口、英文按钮 `Restore Purchases`、静音等  
 
 ### 2.3 客户端目录示例
 
@@ -182,7 +182,7 @@ src/iap/
 
 - **新 SKU**：商店建商品 + config 表；一般不改表结构  
 - **换云厂商**：只换部署与密钥；代码不绑腾讯 SDK  
-- **日后若加账号**：新建 `AuthModule`，勿把进度塞进 IapModule  
+- **账号与云档**：服务端另建 Auth / cloud save / friends 模块，勿把进度塞进 IapModule。客户端端口见 §8  
 
 ---
 
@@ -193,7 +193,11 @@ src/iap/
 - `presentation → application → domain ← data`  
 - `game → progress | inventory | entitlements | config`  
 - `store_ui / settings → iap → entitlements | inventory`  
+- `settings → auth | gift`  
+- `cloud_save → auth | progress | inventory | entitlements`  
+- `gift → inventory`（仅领取入账；送出不扣库存）  
 - `iap → config`  
+- `game` 领域层不依赖 `auth`；过关软提示只在 game 的 presentation  
 
 **服务端**
 
@@ -212,13 +216,15 @@ src/iap/
 | POST | `/v1/iap/verify` | 验单；成功后客户端写本机 |
 | GET | `/health` | 探活 |
 
+账号、云档、好友互赠的客户端端口见 §8。Fake adapter 在进程内完成，游客路径不发起这些调用。Restore Purchases 仍只走商店验单，不从云档扩 scope。
+
 错误体：`{ "code": "IAP_VERIFY_FAILED", "message": "..." }`
 
 ---
 
 ## 6. 测试与质量
 
-- 客户端：domain/application 纯单测；iap 用 Fake StoreClient  
+- 客户端：domain/application 纯单测；iap 用 Fake StoreClient；账号提示、互赠上限、云档合并见 `test/account_friends_test.dart`  
 - 服务端：verifier 夹具；订单幂等；OpenAPI 契约  
 - CI：analyzer + test；禁止跨层乱引用  
 
@@ -228,3 +234,35 @@ src/iap/
 
 总架构：[docs/TECH_ARCHITECTURE.md](./TECH_ARCHITECTURE.md)  
 商品与产品规则以架构方案 + 策划功能说明为准；本文只描述代码怎么切、怎么依赖、怎么扩展。
+
+---
+
+## 8. 账号、云存档与好友互赠（产品 v1.1）
+
+客户端模块 `auth`、`cloud_save`、`gift`：默认游客本机档；第 5 关过关后可跳过绑定 X/Facebook；第 8 关撤回解锁后再推绑定并邀请好友。登录后云同步进度、道具与权益。规则与 Param ID 见 `GAME_FEATURES.md` §3.7.1、§3.7.1b、§5.14；后台 API 见 `TECH_ARCHITECTURE.md` 修订附记 v1.2。Restore Purchases 仍只恢复去广告与关卡包。
+
+### 8.1 目录
+
+```
+lib/features/auth/        AuthPort + FakeAuthAdapter，本机记住绑定与 L5/L8 跳过
+lib/features/cloud_save/  CloudSavePort + FakeCloudSaveAdapter，合并后写回本机
+lib/features/gift/        GiftPort + FakeGiftAdapter，邀请与每日互赠
+```
+
+每个模块仍是 `presentation → application → domain ← data`。端口在 domain，Fake 在 data，Riverpod 在 `lib/app/providers.dart` 绑定。
+
+### 8.2 合并策略（updatedAt / max clearedLevel）
+
+1. `highestCleared = max(local, cloud)`，通关进度不回退。  
+2. Move / Undo / Shuffle 取 `updatedAt` 更新的一侧。时钟只在过关、道具数量变化、领取礼物时前进。静音、手指引导、昵称留在本机，不进云档。  
+3. `updatedAt` 相同则每种道具取较大值，平局不丢次数。  
+4. `removeAds`、`barnBundle`、`harvestBundle` 按或合并，已购不因另一台设备较旧而消失。这与 Restore Purchases 分开：Restore 仍只从商店拉回这三档，不恢复进度和道具。  
+5. 合并结果的 `updatedAt` 取较新的时间，写回本机并 push。新安装的本地时钟是 epoch，因此云档上的道具和更高通关会被拉回。  
+6. 未绑定账号时 `SyncCloudSave` 直接返回，不调用 `CloudSavePort`。拉取失败则保留本机，不拿空档覆盖云端。
+
+### 8.3 互赠
+
+- 当日先选定的道具类型锁定（Move / Undo / Shuffle 三选一）。  
+- 免费赠送池每天最多送出 3 次，不扣自己的库存。  
+- 同一好友同一天最多收 1 次。接收总次数不按 3 封顶。  
+- 失败页和已解锁但次数为 0 的道具条提供英文 `Ask a friend`，进入好友页。文案不出现 “Please log in”。

@@ -8,6 +8,9 @@ import '../../../app/providers.dart';
 import '../../../core/audio/sfx_player.dart';
 import '../../../core/theme/farm_theme.dart';
 import '../../../shared/item_glyph.dart';
+import '../../auth/domain/auth_provider_kind.dart';
+import '../../auth/domain/bind_prompt.dart';
+import '../../auth/presentation/bind_offer_sheet.dart';
 import '../../config/domain/game_config.dart';
 import '../../inventory/domain/tool_inventory.dart';
 import '../domain/game_state.dart';
@@ -155,7 +158,57 @@ class _GamePageState extends ConsumerState<GamePage>
     await _sfx.play('cheer');
     await _confetti.forward(from: 0);
     if (!mounted) return;
-    context.go('/');
+    final auth = ref.read(authStateProvider);
+    final prompt = BindPromptGate.evaluate(
+      clearedLevel: widget.level,
+      bound: auth.bound,
+      cloudSaveDismissed: auth.cloudSaveDismissed,
+      inviteDismissed: auth.inviteDismissed,
+    );
+    var openFriends = false;
+    if (prompt != BindPromptKind.none) {
+      final linked = await _offerBind(prompt);
+      openFriends = linked && prompt == BindPromptKind.inviteFriends;
+    }
+    if (!mounted) return;
+    context.go(openFriends ? '/friends' : '/');
+  }
+
+  Future<bool> _offerBind(BindPromptKind kind) async {
+    final result = await showModalBottomSheet<BindSheetResult>(
+      context: context,
+      isDismissible: true,
+      enableDrag: true,
+      isScrollControlled: true,
+      backgroundColor: FarmColors.cream,
+      builder: (sheetContext) {
+        return BindOfferSheet(
+          kind: kind,
+          onSkip: () => Navigator.pop(sheetContext, BindSheetResult.skipped),
+          onBind: (AuthProviderKind provider) async {
+            final error = await ref
+                .read(authStateProvider.notifier)
+                .bind(provider);
+            if (error != null) return error;
+            if (sheetContext.mounted) {
+              Navigator.pop(sheetContext, BindSheetResult.linked);
+            }
+            return null;
+          },
+        );
+      },
+    );
+    if (!mounted) return false;
+    if (result != BindSheetResult.linked) {
+      final notifier = ref.read(authStateProvider.notifier);
+      if (kind == BindPromptKind.cloudSave) {
+        await notifier.dismissCloudSave();
+      } else if (kind == BindPromptKind.inviteFriends) {
+        await notifier.dismissInvite();
+      }
+      return false;
+    }
+    return true;
   }
 
   Future<void> _onTapCard(TileCard card, Rect rect) async {
@@ -177,9 +230,8 @@ class _GamePageState extends ConsumerState<GamePage>
     final lifted = _controller.liftHold(card.id);
     if (lifted == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No open tray slot.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('No open tray slot.')));
       return;
     }
     setState(() => _busy = true);
@@ -257,15 +309,18 @@ class _GamePageState extends ConsumerState<GamePage>
   Widget _body(GameVm vm, GameConfig config, ToolInventory bank) {
     if (vm.loading) {
       return const Center(
-          child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircularProgressIndicator(color: FarmColors.ink),
-          SizedBox(height: 12),
-          Text('Setting up the porch...',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-        ],
-      ));
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: FarmColors.ink),
+            SizedBox(height: 12),
+            Text(
+              'Setting up the porch...',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+      );
     }
     if (vm.error != null) {
       return _MessagePane(
@@ -328,14 +383,17 @@ class _GamePageState extends ConsumerState<GamePage>
                     children: [
                       for (final card in game.hold)
                         _HoldChip(
-                            card: card, onTap: (rect) => _onHold(card, rect)),
+                          card: card,
+                          onTap: (rect) => _onHold(card, rect),
+                        ),
                     ],
                   ),
                 ),
               _Tray(
                 cards: game.tray,
                 capacity: game.trayCapacity,
-                warn: game.tray.length >= warnAt &&
+                warn:
+                    game.tray.length >= warnAt &&
                     game.status == GameStatus.play,
                 slotKeys: _slotKeys,
                 popping: _popping,
@@ -349,12 +407,23 @@ class _GamePageState extends ConsumerState<GamePage>
                 controller: _controller,
                 busy: _busy,
                 onUse: _use,
+                showAskFriend: _outOfTools(vm, bank),
+                onAskFriend: () => context.push('/friends'),
               ),
             ],
           ),
         ),
       ],
     );
+  }
+
+  bool _outOfTools(GameVm vm, ToolInventory bank) {
+    final level = vm.game?.level ?? widget.level;
+    for (final power in Power.values) {
+      if (level < _controller.unlockLevel(power)) continue;
+      if (vm.freeFor(power) + bank.of(power) <= 0) return true;
+    }
+    return false;
   }
 
   String? _hintCard(GameState game) {
@@ -390,9 +459,10 @@ class _GamePageState extends ConsumerState<GamePage>
             border: Border.all(color: const Color(0xFFDFC686), width: 1.5),
             boxShadow: const [
               BoxShadow(
-                  color: Color(0x44000000),
-                  blurRadius: 10,
-                  offset: Offset(0, 6))
+                color: Color(0x44000000),
+                blurRadius: 10,
+                offset: Offset(0, 6),
+              ),
             ],
           ),
           child: ItemGlyph(type: fly.type, padding: const EdgeInsets.all(5)),
@@ -448,11 +518,21 @@ class _GamePageState extends ConsumerState<GamePage>
                   'Try this level again?',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      color: FarmColors.ink),
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: FarmColors.ink,
+                  ),
                 ),
                 const SizedBox(height: 16),
+                TextButton(
+                  key: const Key('ask-friend'),
+                  onPressed: () => context.push('/friends'),
+                  child: const Text(
+                    'Ask a friend',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
@@ -490,11 +570,12 @@ class _GamePageState extends ConsumerState<GamePage>
 }
 
 class _Header extends StatelessWidget {
-  const _Header(
-      {required this.level,
-      required this.busy,
-      required this.onHome,
-      required this.onRetry});
+  const _Header({
+    required this.level,
+    required this.busy,
+    required this.onHome,
+    required this.onRetry,
+  });
 
   final int level;
   final bool busy;
@@ -521,9 +602,10 @@ class _Header extends StatelessWidget {
             child: Text(
               'Level $level',
               style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18),
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
             ),
           ),
         ],
@@ -583,10 +665,13 @@ class _Tray extends StatelessWidget {
       decoration: BoxDecoration(
         color: warn ? FarmColors.warn : FarmColors.wood,
         borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(14), bottom: Radius.circular(20)),
+          top: Radius.circular(14),
+          bottom: Radius.circular(20),
+        ),
         border: Border.all(
-            color: warn ? const Color(0xFFD07030) : FarmColors.woodEdge,
-            width: 2),
+          color: warn ? const Color(0xFFD07030) : FarmColors.woodEdge,
+          width: 2,
+        ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: Row(
@@ -621,8 +706,8 @@ class _Tray extends StatelessWidget {
     final shift = popping ? (mid - index) * 18 * popT : 0.0;
     final scale = popping
         ? 1 +
-            (popScale - 1) *
-                (popT < 0.45 ? popT / 0.45 : 1 - (popT - 0.45) / 0.55)
+              (popScale - 1) *
+                  (popT < 0.45 ? popT / 0.45 : 1 - (popT - 0.45) / 0.55)
         : 1.0;
     return Opacity(
       opacity: popping ? (1 - popT).clamp(0.0, 1.0) : 1,
@@ -678,6 +763,8 @@ class _Powers extends StatelessWidget {
     required this.controller,
     required this.busy,
     required this.onUse,
+    required this.showAskFriend,
+    required this.onAskFriend,
   });
 
   final GameVm vm;
@@ -685,25 +772,50 @@ class _Powers extends StatelessWidget {
   final GameController controller;
   final bool busy;
   final void Function(Power power) onUse;
+  final bool showAskFriend;
+  final VoidCallback onAskFriend;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
       children: [
-        for (final power in Power.values) ...[
-          if (power != Power.move) const SizedBox(width: 8),
-          Expanded(
-            child: _PowerButton(
-              power: power,
-              vm: vm,
-              bank: bank,
-              controller: controller,
-              busy: busy,
-              onUse: onUse,
-            ),
-          ),
-        ],
+        Row(
+          children: [
+            for (final power in Power.values) ...[
+              if (power != Power.move) const SizedBox(width: 8),
+              Expanded(
+                child: _PowerButton(
+                  power: power,
+                  vm: vm,
+                  bank: bank,
+                  controller: controller,
+                  busy: busy,
+                  onUse: onUse,
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (showAskFriend) _AskFriendLine(onPressed: onAskFriend),
       ],
+    );
+  }
+}
+
+class _AskFriendLine extends StatelessWidget {
+  const _AskFriendLine({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      key: const Key('ask-friend-tools'),
+      onPressed: onPressed,
+      child: const Text(
+        'Ask a friend',
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+      ),
     );
   }
 }
@@ -732,7 +844,8 @@ class _PowerButton extends StatelessWidget {
     final locked = level < unlock;
     final uses = vm.freeFor(power) + bank.of(power);
     final enabled = !busy && !locked && controller.canUse(power, bank);
-    final flash = vm.flashToken > 0 &&
+    final flash =
+        vm.flashToken > 0 &&
         (power == Power.move || power == Power.shuffle) &&
         enabled;
     return Stack(
@@ -746,19 +859,26 @@ class _PowerButton extends StatelessWidget {
             child: ElevatedButton(
               onPressed: enabled ? () => onUse(power) : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    locked ? const Color(0xFFCBB892) : const Color(0xFF2F86EF),
-                disabledBackgroundColor:
-                    locked ? const Color(0xFFCBB892) : const Color(0xFFB89A72),
-                foregroundColor:
-                    locked ? const Color(0xFF5A4430) : Colors.white,
-                disabledForegroundColor:
-                    locked ? const Color(0xFF5A4430) : const Color(0xFF6B5340),
+                backgroundColor: locked
+                    ? const Color(0xFFCBB892)
+                    : const Color(0xFF2F86EF),
+                disabledBackgroundColor: locked
+                    ? const Color(0xFFCBB892)
+                    : const Color(0xFFB89A72),
+                foregroundColor: locked
+                    ? const Color(0xFF5A4430)
+                    : Colors.white,
+                disabledForegroundColor: locked
+                    ? const Color(0xFF5A4430)
+                    : const Color(0xFF6B5340),
                 elevation: 0,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                textStyle:
-                    const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -782,18 +902,20 @@ class _PowerButton extends StatelessWidget {
             right: -4,
             top: -6,
             child: Image(
-                image: AssetImage('assets/images/ui/power-lock.png'),
-                width: 26,
-                height: 26),
+              image: AssetImage('assets/images/ui/power-lock.png'),
+              width: 26,
+              height: 26,
+            ),
           ),
         if (vm.powerHint == power)
           const Positioned(
             right: 8,
             bottom: -18,
             child: Image(
-                image: AssetImage('assets/images/ui/tip-hand.png'),
-                width: 36,
-                height: 36),
+              image: AssetImage('assets/images/ui/tip-hand.png'),
+              width: 36,
+              height: 36,
+            ),
           ),
       ],
     );
@@ -817,7 +939,9 @@ class _FlashState extends State<_Flash> with SingleTickerProviderStateMixin {
   void initState() {
     super.initState();
     _controller = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 700));
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
     if (widget.token > 0) _controller.forward();
   }
 
@@ -870,12 +994,15 @@ class _Spark extends StatelessWidget {
               ? const Image(
                   image: AssetImage('assets/images/ui/star-spark.png'),
                   width: 18,
-                  height: 18)
+                  height: 18,
+                )
               : Container(
                   width: 10,
                   height: 10,
                   decoration: const BoxDecoration(
-                      color: Color(0xFFFFD84A), shape: BoxShape.circle),
+                    color: Color(0xFFFFD84A),
+                    shape: BoxShape.circle,
+                  ),
                 ),
         ),
       ),
@@ -900,7 +1027,8 @@ class _ConfettiBit extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final swing = (index.isEven ? 1 : -1) *
+    final swing =
+        (index.isEven ? 1 : -1) *
         (18.0 + (index % 5) * 10) *
         math.sin(t * math.pi);
     return Align(
@@ -949,9 +1077,14 @@ class _ChoiceButton extends StatelessWidget {
       ),
       child: TextButton(
         onPressed: onPressed,
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 18, fontWeight: FontWeight.w900, color: foreground)),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            color: foreground,
+          ),
+        ),
       ),
     );
   }
@@ -980,10 +1113,11 @@ class _MessagePane extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(text,
-                textAlign: TextAlign.center,
-                style:
-                    const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: onPressed, child: Text(action)),
             if (second != null) ...[

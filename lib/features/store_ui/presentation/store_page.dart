@@ -28,11 +28,13 @@ class _StorePageState extends ConsumerState<StorePage> {
         content: Text('${listing.blurb}\n\n${listing.sku.priceLabel}'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text(StoreCopy.notNow)),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(StoreCopy.notNow),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text(StoreCopy.buy)),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(StoreCopy.buy),
+          ),
         ],
       ),
     );
@@ -41,23 +43,30 @@ class _StorePageState extends ConsumerState<StorePage> {
     final outcome = await ref.read(purchaseProductProvider).call(listing.sku);
     if (!mounted) return;
     if (outcome.ok) {
+      await ref.read(localRevisionProvider).touch();
       ref.read(inventoryProvider.notifier).reload();
       ref.read(entitlementsProvider.notifier).reload();
+      await ref.read(authStateProvider.notifier).syncFromCloud();
     }
     setState(() => _busyId = null);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content: Text(outcome.ok
+        content: Text(
+          outcome.ok
               ? 'Added to this device.'
-              : (outcome.message ?? 'Purchase failed.'))),
+              : (outcome.message ?? 'Purchase failed.'),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final listings = const CatalogMapper()
-        .map(ref.watch(configProvider), ref.watch(entitlementsProvider));
+    final listings = const CatalogMapper().map(
+      ref.watch(configProvider),
+      ref.watch(entitlementsProvider),
+    );
     final inventory = ref.watch(inventoryProvider);
     return SkyBackdrop(
       child: Scaffold(
@@ -66,8 +75,10 @@ class _StorePageState extends ConsumerState<StorePage> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           foregroundColor: FarmColors.ink,
-          title: const Text(StoreCopy.title,
-              style: TextStyle(fontWeight: FontWeight.w900)),
+          title: const Text(
+            StoreCopy.title,
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
         ),
         body: SafeArea(
           top: false,
@@ -78,25 +89,35 @@ class _StorePageState extends ConsumerState<StorePage> {
               const Text(
                 StoreCopy.lead,
                 style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w700, height: 1.3),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
+                ),
               ),
               const SizedBox(height: 8),
-              Text(StoreCopy.yourTools,
-                  style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                StoreCopy.yourTools,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 4),
               ToolBankLine(inventory: inventory),
               const SizedBox(height: 16),
               for (final section in [
                 StoreCopy.room,
                 StoreCopy.tools,
-                StoreCopy.quiet
+                StoreCopy.quiet,
               ]) ...[
-                Text(section,
-                    style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.w900)),
+                Text(
+                  section,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 const SizedBox(height: 8),
-                for (final listing
-                    in listings.where((item) => item.section == section))
+                for (final listing in listings.where(
+                  (item) => item.section == section,
+                ))
                   _SkuCard(
                     listing: listing,
                     focused: listing.sku.id == widget.focusSku,
@@ -118,11 +139,12 @@ class _StorePageState extends ConsumerState<StorePage> {
 }
 
 class _SkuCard extends StatelessWidget {
-  const _SkuCard(
-      {required this.listing,
-      required this.focused,
-      required this.busy,
-      required this.onBuy});
+  const _SkuCard({
+    required this.listing,
+    required this.focused,
+    required this.busy,
+    required this.onBuy,
+  });
 
   final StoreListing listing;
   final bool focused;
@@ -139,8 +161,9 @@ class _SkuCard extends StatelessWidget {
         color: FarmColors.cream,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-            color: focused ? FarmColors.leaf : const Color(0xFF8A6340),
-            width: focused ? 3 : 1.5),
+          color: focused ? FarmColors.leaf : const Color(0xFF8A6340),
+          width: focused ? 3 : 1.5,
+        ),
       ),
       child: Row(
         children: [
@@ -148,13 +171,21 @@ class _SkuCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(listing.sku.title,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w900)),
+                Text(
+                  listing.sku.title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(listing.blurb,
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600)),
+                Text(
+                  listing.blurb,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
@@ -165,7 +196,8 @@ class _SkuCard extends StatelessWidget {
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : Text(owned ? StoreCopy.owned : listing.sku.priceLabel),
           ),
         ],
