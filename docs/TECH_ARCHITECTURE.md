@@ -184,3 +184,16 @@
 - 好友每日互赠同种道具最多送出 3 次；详见 `GAME_FEATURES.md` §3.7.1 / §5.14。
 - Restore Purchases 范围不变（仅去广告 + 关卡包）。
 - 客户端合并：`highestCleared` 取较大值；道具次数取 `updatedAt` 较新的一侧（时间相同则每种取较大值）；去广告与关卡包按或合并，避免权益回退。静音、引导、昵称不同步。
+
+## 修订附记 v1.3（2026-10-09｜策划｜增长）
+
+- 双向邀请：被邀请人新装并过 L1，双方各 Move/Undo/Shuffle +2；邀请人日 cap 5 / 终身 50。
+- 深链：invite / gift / challenge（+ shop 预留）；未安装延迟归因；冷启动解析后再导航。
+- 软评星：连胜≥3 或首次过 L10/L20；原生 In-App Review；冷却 90 天；不与绑定/邀请同帧。
+- **实现仓库**：`farmMatch-app`（Flutter）。网页原型仓库本版**不改**玩法与增长逻辑。
+
+## 修订附记 v1.4（2026-10-09｜策划｜互赠提醒）
+
+- 收礼推送（后台）+ 每日 19–21 点未送出提醒（最多 1 条）；App 内红点；深链 `gift`。
+- 通知权限：L8 邀请后或首次收礼再申请。仅 farmMatch-app。
+- 延迟深链实现：Play Install Referrer stub（prefs `install_referrer`）+ 首次启动剪贴板；scheme `farmmatch://`；网页宿主 `https://farmmatch.app`。不使用已停用的 Firebase Dynamic Links。

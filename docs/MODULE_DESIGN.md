@@ -266,3 +266,28 @@ lib/features/gift/        GiftPort + FakeGiftAdapter，邀请与每日互赠
 - 免费赠送池每天最多送出 3 次，不扣自己的库存。  
 - 同一好友同一天最多收 1 次。接收总次数不按 3 封顶。  
 - 失败页和已解锁但次数为 0 的道具条提供英文 `Ask a friend`，进入好友页。文案不出现 “Please log in”。
+
+## 9. 增长模块（v1.2+｜仅 App）
+
+规则与 Param ID 见 `GAME_FEATURES.md` §3.7.1c–e、§5.15。网页原型不做。
+
+- `invite`：邀请码生成、归因、双向发奖、日/终身上限。
+- `deeplink`：Universal/App Links + scheme `farmmatch://`；延迟深链；路由表 invite / gift / challenge / shop（shop 预留，落到现有商店页）。
+- `rate_prompt`：连胜与关卡钩子；In-App Review 端口；冷却与绑定/邀请弹窗互斥。
+- `gift_remind`：收礼推送、晚间未送出提醒、红点、通知权限时机（§3.7.1f / §5.16，本迭代只保留规格，推送调度后续接系统通知）。
+
+### 9.1 延迟深链选型
+
+Firebase Dynamic Links 已停用。本客户端用 **安装来源 stub + 剪贴板**，CI 用 Fake：
+
+1. 首次打开读取 `install_referrer`（Android Play Install Referrer 的替身，测试可预写这条 prefs）。读过即丢，避免二次归因。
+2. 若没有来源，再看剪贴板是否为 `farmmatch://` 或 `https://farmmatch.app/...`，只在首次打开尝试一次。
+3. 自定义 scheme `farmmatch://invite|gift|challenge|shop` 作已安装时的兜底。通用链接形态为 `https://farmmatch.app/<type>`。
+4. 冷启动：解析链接 → 游客身份就绪 → 再 `go` 到意图页。解析失败留在首页。
+
+| 类型 | 例子 | 落地 |
+|------|------|------|
+| invite | `farmmatch://invite?code=FARM-1000` | 首页轻提示去打第 1 关，并记下邀请码 |
+| gift | `farmmatch://gift?from=Sunny&type=undo` | 好友礼物页 |
+| challenge | `farmmatch://challenge?level=12` | 已解锁则进该关，否则停在首页 |
+| shop | `farmmatch://shop?sku=barn_bundle` | 预留；打开商店并聚焦 SKU |
