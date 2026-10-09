@@ -228,3 +228,9 @@ src/iap/
 
 总架构：[docs/TECH_ARCHITECTURE.md](./TECH_ARCHITECTURE.md)  
 商品与产品规则以架构方案 + 策划功能说明为准；本文只描述代码怎么切、怎么依赖、怎么扩展。
+
+### 增长模块（v1.2+｜仅 App）
+
+- `invite`：邀请码生成、归因、双向发奖、日/终身上限。
+- `deeplink`：Universal/App Links + scheme；deferred install；路由表 invite/gift/challenge/shop。
+- `rate_prompt`：连胜与关卡钩子；In-App Review；冷却与弹窗互斥。
