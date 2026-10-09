@@ -17,7 +17,6 @@ import 'package:farm_match/features/gift/data/fake_gift_adapter.dart';
 import 'package:farm_match/features/gift/domain/daily_gift_policy.dart';
 import 'package:farm_match/features/gift/domain/friend_profile.dart';
 import 'package:farm_match/features/inventory/data/inventory_repository_impl.dart';
-import 'package:farm_match/features/inventory/domain/tool_inventory.dart';
 import 'package:farm_match/features/progress/data/progress_repository_impl.dart';
 import 'package:farm_match/features/progress/domain/player_progress.dart';
 import 'package:farm_match/features/settings/presentation/settings_page.dart';
@@ -134,10 +133,10 @@ void main() {
       );
       expect(switched.deny, GiftDeny.differentTool);
 
-      expect(
-        inventory.load(),
-        const ToolInventory(move: 5, undo: 5, shuffle: 5),
-      );
+      final bank = inventory.load();
+      expect(bank.move, 5);
+      expect(bank.undo, 5);
+      expect(bank.shuffle, 5);
     });
 
     test('the same friend can deliver at most one gift per day', () async {
