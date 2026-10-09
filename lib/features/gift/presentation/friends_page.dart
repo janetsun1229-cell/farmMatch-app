@@ -32,7 +32,12 @@ class _FriendsPageState extends ConsumerState<FriendsPage> {
   @override
   void initState() {
     super.initState();
-    Future<void>.microtask(_reload);
+    Future<void>.microtask(() async {
+      await ref
+          .read(giftRemindProvider.notifier)
+          .markFriendsOpened(DateTime.now());
+      await _reload();
+    });
   }
 
   Future<void> _reload() async {
@@ -107,6 +112,7 @@ class _FriendsPageState extends ConsumerState<FriendsPage> {
       _inviteCode = result.code;
     });
     await _reload();
+    await ref.read(giftRemindProvider.notifier).noteForegroundGift();
   }
 
   Future<void> _send(FriendProfile friend) async {
@@ -144,6 +150,7 @@ class _FriendsPageState extends ConsumerState<FriendsPage> {
       await ref.read(localRevisionProvider).touch();
       await ref.read(authStateProvider.notifier).syncFromCloud();
     }
+    await ref.read(giftRemindProvider.notifier).refresh();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -309,9 +316,15 @@ class _FriendsPageState extends ConsumerState<FriendsPage> {
                         onSend: () => _send(friend),
                       ),
                   const SizedBox(height: 18),
-                  const Text(
-                    'Gifts for you',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                  Text(
+                    _inbox.where((gift) => !gift.claimed).isEmpty
+                        ? 'Gifts for you'
+                        : 'Gifts for you (${_inbox.where((gift) => !gift.claimed).length})',
+                    key: const Key('gifts-unread'),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   if (_inbox.isEmpty)

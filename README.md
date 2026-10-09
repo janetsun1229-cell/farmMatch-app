@@ -43,6 +43,7 @@ lib/
     invite/       bidirectional invite rewards and caps
     deeplink/     invite / gift / challenge / shop routing
     rate_prompt/  soft in-app review
+    gift_remind/  receive push, evening reminder, red dots
     progress/     cleared level, mute, hint flags
     inventory/    Move / Undo / Shuffle bank
     entitlements/ remove ads, Barn Bundle, Harvest Bundle
@@ -74,7 +75,7 @@ Each feature is split into `presentation`, `application`, `domain`, and `data`. 
 - Deep links use `farmmatch://invite|gift|challenge|shop`. The same paths are accepted as `https://farmmatch.app/<type>` and as a cold-start path such as `/invite?code=`. Shop is reserved and opens the Farm Stand with `?focus=`. A locked challenge stays on the home screen. Cold start parses the link after the guest profile is ready, then navigates. A bad link stays home.
 - Deferred deep link (Firebase Dynamic Links is retired): the first open reads prefs key `install_referrer` once (Play Install Referrer stand-in), then the clipboard once if it looks like `farmmatch://` or `https://farmmatch.app`. iOS Universal Links and Android App Links for `https://farmmatch.app` are the production path once that host publishes the association files. The shipped client registers the `farmmatch` scheme.
 - Soft review: a skippable "Enjoying Farm Match?" sheet after a 3-clear streak or the first clear of level 10 or 20. It never shows after a fail, at most once a calendar day, then not again for 90 days. Rate ends prompts for this install. It waits if a link or invite sheet is already up.
-- Daily gift reminders (§3.7.1f) stay in the spec. This build does not schedule notifications.
+- Daily reminders: a background gift posts “{name} sent you {tool}! Tap to send one back.” and opens the gift link. The same friend is pushed at most once an hour. Between 19:00 and 21:00 local, one reminder says “Send a boost to a friend today” if you still have a send left and have not sent yet. Home and Friends show a red dot for an unread gift or that reminder. Notification permission is asked after the level 8 invite sheet or the first gift in a session, never on launch. The CI build records pushes on a fake port.
 
 Deals use the HTML prototype’s seeded layout (level id is the seed). `flutter test` checks all 50 deals against `test/fixtures/deals.json` and clears each level by its known solution order.
 

@@ -35,4 +35,13 @@ abstract class GiftPort {
     required String accountId,
     required String giftId,
   });
+
+  /// Delivers a gift onto this account. Null when that friend already sent
+  /// one on [dayKey].
+  Future<IncomingGift?> deliver({
+    required String accountId,
+    required FriendProfile friend,
+    required Power tool,
+    required String dayKey,
+  });
 }

@@ -188,6 +188,9 @@ class _GamePageState extends ConsumerState<GamePage>
     if (showedAuth) {
       final linked = await _offerBind(prompt);
       openFriends = linked && prompt == BindPromptKind.inviteFriends;
+      if (prompt == BindPromptKind.inviteFriends) {
+        await ref.read(giftRemindProvider.notifier).afterInviteFlow();
+      }
     } else if (ReviewPromptGate.allow(
       failed: false,
       streak: review.streak,

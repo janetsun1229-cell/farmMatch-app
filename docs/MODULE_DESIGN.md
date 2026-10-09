@@ -274,7 +274,7 @@ lib/features/gift/        GiftPort + FakeGiftAdapter，邀请与每日互赠
 - `invite`：邀请码生成、归因、双向发奖、日/终身上限。
 - `deeplink`：Universal/App Links + scheme `farmmatch://`；延迟深链；路由表 invite / gift / challenge / shop（shop 预留，落到现有商店页）。
 - `rate_prompt`：连胜与关卡钩子；In-App Review 端口；冷却与绑定/邀请弹窗互斥。
-- `gift_remind`：收礼推送、晚间未送出提醒、红点、通知权限时机（§3.7.1f / §5.16，本迭代只保留规格，推送调度后续接系统通知）。
+- `gift_remind`：收礼推送、晚间未送出提醒、红点、通知权限时机（§3.7.1f / §5.16）。本客户端用 `NotificationPort` + Fake 记录推送；系统通知插件后续替换 Fake。权限只在 L8 邀请流程之后或本次会话首次收礼时请求。
 
 ### 9.1 延迟深链选型
 

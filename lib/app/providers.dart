@@ -36,7 +36,15 @@ import '../features/deeplink/application/open_deep_link.dart';
 import '../features/deeplink/data/deferred_link_store.dart';
 import '../features/entitlements/domain/level_gate.dart';
 import '../features/gift/data/fake_gift_adapter.dart';
+import '../features/gift/domain/daily_gift_policy.dart';
+import '../features/gift/domain/friend_profile.dart';
 import '../features/gift/domain/ports/gift_port.dart';
+import '../features/gift_remind/application/receive_friend_gift.dart';
+import '../features/gift_remind/application/remind_daily_gift.dart';
+import '../features/gift_remind/data/fake_notification_adapter.dart';
+import '../features/gift_remind/data/gift_remind_store.dart';
+import '../features/gift_remind/domain/gift_remind_policy.dart';
+import '../features/gift_remind/domain/ports/notification_port.dart';
 import '../features/invite/application/capture_invite.dart';
 import '../features/invite/application/claim_inviter_rewards.dart';
 import '../features/invite/application/settle_invite.dart';
@@ -413,5 +421,166 @@ class InviteBannerController extends Notifier<bool> {
   void refresh() {
     final local = ref.read(inviteLocalProvider).load();
     state = local.pendingCode != null && !local.attributed;
+  }
+}
+
+final giftRemindStoreProvider = Provider<GiftRemindStore>(
+  (ref) => GiftRemindStore(ref.watch(prefsProvider)),
+);
+
+final notificationPortProvider = Provider<NotificationPort>(
+  (ref) => FakeNotificationAdapter(),
+);
+
+final remindPromptProvider =
+    NotifierProvider<RemindPromptController, RemindAsk>(
+  RemindPromptController.new,
+);
+
+class RemindPromptController extends Notifier<RemindAsk> {
+  @override
+  RemindAsk build() => RemindAsk.none;
+
+  void request(RemindAsk ask) {
+    if (ask == RemindAsk.none || state != RemindAsk.none) return;
+    state = ask;
+  }
+
+  void clear() => state = RemindAsk.none;
+}
+
+class GiftBadge {
+  const GiftBadge({required this.unclaimed, required this.showDot});
+
+  final int unclaimed;
+  final bool showDot;
+
+  static const clear = GiftBadge(unclaimed: 0, showDot: false);
+}
+
+final giftRemindProvider = NotifierProvider<GiftRemindController, GiftBadge>(
+  GiftRemindController.new,
+);
+
+class GiftRemindController extends Notifier<GiftBadge> {
+  var _wasBackground = false;
+  var _deferredAsk = false;
+
+  @override
+  GiftBadge build() => _badge(ref.watch(giftRemindStoreProvider).load());
+
+  GiftBadge _badge(GiftRemindSnapshot snapshot) {
+    final today = DailyGiftPolicy.dayKey(DateTime.now());
+    return GiftBadge(
+      unclaimed: snapshot.unclaimed,
+      showDot: snapshot.showDot(today),
+    );
+  }
+
+  void backgrounded() => _wasBackground = true;
+
+  Future<void> resumed(DateTime now) async {
+    final fromBackground = _wasBackground;
+    _wasBackground = false;
+    await postDaily(now);
+    if (fromBackground && _deferredAsk) {
+      _deferredAsk = false;
+      ref.read(remindPromptProvider.notifier).request(RemindAsk.afterFirstGift);
+    }
+  }
+
+  Future<void> refresh() async {
+    final link = ref.read(authStateProvider).link;
+    final store = ref.read(giftRemindStoreProvider);
+    if (link == null) {
+      await store.setUnclaimed(0);
+    } else {
+      final inbox = await ref.read(giftPortProvider).inbox(link.accountId);
+      final count = inbox.where((gift) => !gift.claimed).length;
+      await store.setUnclaimed(count);
+    }
+    state = _badge(store.load());
+  }
+
+  Future<void> postDaily(DateTime now) async {
+    final link = ref.read(authStateProvider).link;
+    if (link == null) return;
+    await RemindDailyGift(
+      gifts: ref.read(giftPortProvider),
+      store: ref.read(giftRemindStoreProvider),
+      notifications: ref.read(notificationPortProvider),
+    ).call(accountId: link.accountId, bound: true, now: now);
+    state = _badge(ref.read(giftRemindStoreProvider).load());
+  }
+
+  Future<void> afterInviteFlow() async {
+    final snapshot = ref.read(giftRemindStoreProvider).load();
+    final ask = GiftRemindPolicy.permissionAsk(
+      granted: snapshot.granted,
+      askedAfterInvite: snapshot.askedInvite,
+      askedAfterGift: snapshot.askedGift,
+      inviteFlowFinished: true,
+      firstGiftArrived: false,
+    );
+    ref.read(remindPromptProvider.notifier).request(ask);
+  }
+
+  Future<void> noteForegroundGift() async {
+    await refresh();
+    final store = ref.read(giftRemindStoreProvider);
+    final snapshot = store.load();
+    if (snapshot.unclaimed == 0) return;
+    final ask = GiftRemindPolicy.permissionAsk(
+      granted: snapshot.granted,
+      askedAfterInvite: snapshot.askedInvite,
+      askedAfterGift: snapshot.askedGift,
+      inviteFlowFinished: false,
+      firstGiftArrived: !snapshot.everReceived,
+    );
+    await store.markEverReceived();
+    if (ask == RemindAsk.afterFirstGift) {
+      ref.read(remindPromptProvider.notifier).request(ask);
+    }
+  }
+
+  Future<ReceiveGiftResult> receive({
+    required String friendId,
+    required String friendName,
+    required Power tool,
+    required String dayKey,
+    required DateTime now,
+    required bool inForeground,
+  }) async {
+    final link = ref.read(authStateProvider).link;
+    if (link == null) return ReceiveGiftResult.empty;
+    final result = await ReceiveFriendGift(
+      gifts: ref.read(giftPortProvider),
+      store: ref.read(giftRemindStoreProvider),
+      notifications: ref.read(notificationPortProvider),
+    ).call(
+      accountId: link.accountId,
+      friend: FriendProfile(id: friendId, name: friendName),
+      tool: tool,
+      dayKey: dayKey,
+      now: now,
+      inForeground: inForeground,
+    );
+    await refresh();
+    if (result.askPermission) {
+      if (inForeground) {
+        ref
+            .read(remindPromptProvider.notifier)
+            .request(RemindAsk.afterFirstGift);
+      } else {
+        _deferredAsk = true;
+      }
+    }
+    return result;
+  }
+
+  Future<void> markFriendsOpened(DateTime now) async {
+    final store = ref.read(giftRemindStoreProvider);
+    await store.markDailySeen(DailyGiftPolicy.dayKey(now));
+    state = _badge(store.load());
   }
 }

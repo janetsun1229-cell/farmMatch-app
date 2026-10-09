@@ -7,6 +7,7 @@ import '../../../core/theme/farm_theme.dart';
 import '../../auth/domain/auth_provider_kind.dart';
 import '../../entitlements/presentation/ads_status_line.dart';
 import '../../iap/presentation/restore_purchases_button.dart';
+import '../../gift_remind/presentation/gift_dot.dart';
 import '../../identity/presentation/nickname_field.dart';
 import '../../progress/presentation/mute_button.dart';
 
@@ -37,9 +38,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   Future<void> _save() async {
-    final error = await ref
-        .read(identityProvider.notifier)
-        .rename(_nickname.text);
+    final error =
+        await ref.read(identityProvider.notifier).rename(_nickname.text);
     if (!mounted) return;
     setState(() => _error = error);
     if (error == null) {
@@ -108,9 +108,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               const SizedBox(height: 12),
               _AccountCard(
-                linkedLabel: link == null
-                    ? null
-                    : 'Linked with ${link.displayName}',
+                linkedLabel:
+                    link == null ? null : 'Linked with ${link.displayName}',
                 onLinkX: link == null ? () => _bind(AuthProviderKind.x) : null,
                 onLinkFacebook: link == null
                     ? () => _bind(AuthProviderKind.facebook)
@@ -129,7 +128,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                child: const Text('Friends & gifts'),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Friends & gifts'),
+                    if (ref.watch(giftRemindProvider).showDot) ...[
+                      const SizedBox(width: 8),
+                      const GiftDot(),
+                    ],
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
               RestorePurchasesButton(busy: _restoring, onPressed: _restore),
@@ -183,7 +191,9 @@ class _AccountCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            linked ? 'Progress, tools, and purchases sync to this account.' : 'Link X or Facebook to save progress. You can skip and keep playing.',
+            linked
+                ? 'Progress, tools, and purchases sync to this account.'
+                : 'Link X or Facebook to save progress. You can skip and keep playing.',
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
           ),
           if (!linked) ...[

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/providers.dart';
 import '../../../core/theme/farm_theme.dart';
 import '../../deeplink/presentation/growth_toast.dart';
+import '../../gift_remind/presentation/gift_dot.dart';
 import '../../progress/presentation/mute_button.dart';
 import '../application/load_home.dart';
 
@@ -21,6 +22,7 @@ class HomePage extends ConsumerWidget {
     );
     final locked = !snapshot.access.allowed;
     final invited = ref.watch(inviteBannerProvider);
+    final giftDot = ref.watch(giftRemindProvider).showDot;
     return GrowthToastListener(
       child: SkyBackdrop(
         child: Scaffold(
@@ -41,6 +43,24 @@ class HomePage extends ConsumerWidget {
                             onPressed: () => context.push('/settings'),
                             icon: const Icon(Icons.settings,
                                 color: FarmColors.ink, size: 32),
+                          ),
+                          IconButton(
+                            key: const Key('open-friends-home'),
+                            tooltip: 'Friends',
+                            onPressed: () => context.push('/friends'),
+                            icon: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                const Icon(Icons.people,
+                                    color: FarmColors.ink, size: 32),
+                                if (giftDot)
+                                  const Positioned(
+                                    right: -2,
+                                    top: -2,
+                                    child: GiftDot(),
+                                  ),
+                              ],
+                            ),
                           ),
                           const Spacer(),
                           MuteButton(

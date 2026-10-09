@@ -233,6 +233,23 @@ class FakeGiftAdapter implements GiftPort {
     return claimed;
   }
 
+  @override
+  Future<IncomingGift?> deliver({
+    required String accountId,
+    required FriendProfile friend,
+    required Power tool,
+    required String dayKey,
+  }) async {
+    final gift = offerIncoming(
+      accountId: accountId,
+      friend: friend,
+      tool: tool,
+      dayKey: dayKey,
+    );
+    if (gift != null) await _save();
+    return gift;
+  }
+
   /// Stub delivery from a friend onto this account. Returns null when that
   /// friend already sent a gift on [dayKey].
   IncomingGift? offerIncoming({

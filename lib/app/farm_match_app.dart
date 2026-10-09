@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/farm_theme.dart';
 import '../features/deeplink/domain/deep_link.dart';
+import '../features/gift_remind/presentation/gift_remind_host.dart';
 import 'providers.dart';
 import 'router.dart';
 
@@ -14,10 +15,12 @@ class FarmMatchApp extends ConsumerStatefulWidget {
   ConsumerState<FarmMatchApp> createState() => _FarmMatchAppState();
 }
 
-class _FarmMatchAppState extends ConsumerState<FarmMatchApp> {
+class _FarmMatchAppState extends ConsumerState<FarmMatchApp>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
     Future<void>.microtask(() async {
       await ref.read(configProvider.notifier).refresh();
@@ -38,7 +41,30 @@ class _FarmMatchAppState extends ConsumerState<FarmMatchApp> {
           await ref.read(authStateProvider.notifier).syncFromCloud();
         }
       }
+      if (!mounted) return;
+      await ref.read(giftRemindProvider.notifier).postDaily(DateTime.now());
+      await ref.read(giftRemindProvider.notifier).refresh();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final remind = ref.read(giftRemindProvider.notifier);
+    if (state == AppLifecycleState.resumed) {
+      remind.resumed(DateTime.now());
+      return;
+    }
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      remind.backgrounded();
+    }
   }
 
   void _applyLaunch(GrowthLaunch launch) {
@@ -62,6 +88,8 @@ class _FarmMatchAppState extends ConsumerState<FarmMatchApp> {
       theme: buildFarmTheme(),
       scrollBehavior: const FarmScrollBehavior(),
       routerConfig: router,
+      builder: (context, child) =>
+          GiftRemindHost(child: child ?? const SizedBox()),
     );
   }
 }
