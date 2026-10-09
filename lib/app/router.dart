@@ -10,6 +10,7 @@ import '../features/store_ui/presentation/store_page.dart';
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
+    overridePlatformDefaultLocation: true,
     routes: [
       GoRoute(path: '/', builder: (context, state) => const HomePage()),
       GoRoute(

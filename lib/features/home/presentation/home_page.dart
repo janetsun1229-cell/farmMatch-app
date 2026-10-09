@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/theme/farm_theme.dart';
+import '../../deeplink/presentation/growth_toast.dart';
 import '../../progress/presentation/mute_button.dart';
 import '../application/load_home.dart';
 
@@ -19,76 +20,93 @@ class HomePage extends ConsumerWidget {
       config: ref.watch(configProvider),
     );
     final locked = !snapshot.access.allowed;
-    return SkyBackdrop(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: Stack(
-            children: [
-              const Positioned(left: 0, bottom: 120, child: _Farmer()),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          key: const Key('open-settings'),
-                          tooltip: 'Settings',
-                          onPressed: () => context.push('/settings'),
-                          icon: const Icon(Icons.settings,
-                              color: FarmColors.ink, size: 32),
-                        ),
-                        const Spacer(),
-                        MuteButton(
-                          muted: snapshot.progress.muted,
-                          onPressed: () => ref
-                              .read(progressProvider.notifier)
-                              .setMuted(!snapshot.progress.muted),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Image.asset(
-                      'assets/images/home-title.png',
-                      width: 420,
-                      fit: BoxFit.contain,
-                      semanticLabel: 'Farm Match',
-                    ),
-                    if (snapshot.progress.clearedAll)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Image.asset(
-                          'assets/images/ui/cleared-badge.png',
-                          width: 180,
-                          semanticLabel: 'Cleared',
-                        ),
+    final invited = ref.watch(inviteBannerProvider);
+    return GrowthToastListener(
+      child: SkyBackdrop(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: SafeArea(
+            child: Stack(
+              children: [
+                const Positioned(left: 0, bottom: 120, child: _Farmer()),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            key: const Key('open-settings'),
+                            tooltip: 'Settings',
+                            onPressed: () => context.push('/settings'),
+                            icon: const Icon(Icons.settings,
+                                color: FarmColors.ink, size: 32),
+                          ),
+                          const Spacer(),
+                          MuteButton(
+                            muted: snapshot.progress.muted,
+                            onPressed: () => ref
+                                .read(progressProvider.notifier)
+                                .setMuted(!snapshot.progress.muted),
+                          ),
+                        ],
                       ),
-                    const Spacer(),
-                    Text(
-                      'Hello, ${snapshot.user.nickname}',
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: FarmColors.ink),
-                    ),
-                    const SizedBox(height: 12),
-                    _PlayButton(
-                      level: snapshot.level,
-                      locked: locked,
-                      onPressed: () {
-                        if (!snapshot.access.allowed) {
-                          final sku = snapshot.access.sku ?? 'barn_bundle';
-                          context.push('/store?focus=$sku');
-                          return;
-                        }
-                        context.push('/play/${snapshot.level}');
-                      },
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      Image.asset(
+                        'assets/images/home-title.png',
+                        width: 420,
+                        fit: BoxFit.contain,
+                        semanticLabel: 'Farm Match',
+                      ),
+                      if (snapshot.progress.clearedAll)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Image.asset(
+                            'assets/images/ui/cleared-badge.png',
+                            width: 180,
+                            semanticLabel: 'Cleared',
+                          ),
+                        ),
+                      const Spacer(),
+                      Text(
+                        'Hello, ${snapshot.user.nickname}',
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: FarmColors.ink),
+                      ),
+                      const SizedBox(height: 12),
+                      if (invited) ...[
+                        const Text(
+                          'Invite saved. Clear level 1 — you both get free boosts.',
+                          key: Key('invite-banner'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            height: 1.3,
+                            color: FarmColors.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      _PlayButton(
+                        level: snapshot.level,
+                        locked: locked,
+                        onPressed: () {
+                          if (!snapshot.access.allowed) {
+                            final sku = snapshot.access.sku ?? 'barn_bundle';
+                            context.push('/store?focus=$sku');
+                            return;
+                          }
+                          context.push('/play/${snapshot.level}');
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

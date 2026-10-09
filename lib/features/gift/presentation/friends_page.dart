@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../../../core/theme/farm_theme.dart';
 import '../../auth/domain/auth_provider_kind.dart';
+import '../../deeplink/presentation/growth_toast.dart';
 import '../../game/domain/power.dart';
 import '../application/claim_daily_gift.dart';
 import '../application/send_daily_gift.dart';
@@ -25,6 +26,7 @@ class _FriendsPageState extends ConsumerState<FriendsPage> {
   OutboundDay? _outbound;
   var _loading = true;
   String? _inviteCode;
+  String? _inviteLink;
   Power _tool = Power.move;
 
   @override
@@ -72,12 +74,38 @@ class _FriendsPageState extends ConsumerState<FriendsPage> {
     await _reload();
   }
 
+  Future<void> _shareGame() async {
+    final user = ref.read(identityProvider);
+    final issued = await ref.read(inviteDirectoryProvider).issue(
+          accountId: user.id,
+          displayName: user.nickname,
+          bound: false,
+        );
+    await Clipboard.setData(ClipboardData(text: issued.link));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Link copied. Boosts for both of you start after you link X or Facebook.',
+        ),
+      ),
+    );
+  }
+
   Future<void> _invite() async {
     final link = ref.read(authStateProvider).link;
     if (link == null) return;
+    final issued = await ref.read(inviteDirectoryProvider).issue(
+          accountId: link.accountId,
+          displayName: link.displayName,
+          bound: true,
+        );
     final result = await ref.read(giftPortProvider).invite(link.accountId);
     if (!mounted) return;
-    setState(() => _inviteCode = result.code);
+    setState(() {
+      _inviteLink = issued.link;
+      _inviteCode = result.code;
+    });
     await _reload();
   }
 
@@ -134,152 +162,186 @@ class _FriendsPageState extends ConsumerState<FriendsPage> {
     final auth = ref.watch(authStateProvider);
     final day = _outbound;
     final sendsLeft = day?.sendsLeft ?? OutboundDay.maxSends;
-    return SkyBackdrop(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
+    return GrowthToastListener(
+      child: SkyBackdrop(
+        child: Scaffold(
           backgroundColor: Colors.transparent,
-          elevation: 0,
-          foregroundColor: FarmColors.ink,
-          title: const Text(
-            'Friends & gifts',
-            style: TextStyle(fontWeight: FontWeight.w900),
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            foregroundColor: FarmColors.ink,
+            title: const Text(
+              'Friends & gifts',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
           ),
-        ),
-        body: SafeArea(
-          top: false,
-          child: ListView(
-            physics: const ClampingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-            children: [
-              if (!auth.bound) ...[
-                const Text(
-                  'Link X or Facebook to gift free daily tools and save progress. You can keep playing either way.',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
+          body: SafeArea(
+            top: false,
+            child: ListView(
+              physics: const ClampingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+              children: [
+                if (!auth.bound) ...[
+                  const Text(
+                    'Link X or Facebook to gift free daily tools and save progress. You can keep playing either way.',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  key: const Key('friends-bind-x'),
-                  onPressed: () => _bind(AuthProviderKind.x),
-                  child: const Text('Link X'),
-                ),
-                const SizedBox(height: 8),
-                FilledButton(
-                  key: const Key('friends-bind-facebook'),
-                  onPressed: () => _bind(AuthProviderKind.facebook),
-                  child: const Text('Link Facebook'),
-                ),
-              ] else ...[
-                Text(
-                  'Free gifts left today: $sendsLeft',
-                  key: const Key('gifts-left'),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    key: const Key('friends-bind-x'),
+                    onPressed: () => _bind(AuthProviderKind.x),
+                    child: const Text('Link X'),
                   ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Pick one tool for today. Sends come from a free pool and do not use your own tools.',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    for (final power in Power.values) ...[
-                      if (power != Power.move) const SizedBox(width: 8),
-                      Expanded(
-                        child: _ToolPick(
-                          power: power,
-                          selected: _tool == power,
-                          enabled: day?.tool == null || day!.tool == power,
-                          onPressed: () => setState(() => _tool = power),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  key: const Key('invite-friend'),
-                  onPressed: _loading ? null : _invite,
-                  child: const Text('Invite a friend'),
-                ),
-                if (_inviteCode != null) ...[
                   const SizedBox(height: 8),
+                  FilledButton(
+                    key: const Key('friends-bind-facebook'),
+                    onPressed: () => _bind(AuthProviderKind.facebook),
+                    child: const Text('Link Facebook'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    key: const Key('share-game'),
+                    onPressed: _shareGame,
+                    child: const Text('Share the game'),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Sharing before you link copies the game only. Boosts for both of you start after you link X or Facebook.',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                ] else ...[
                   Text(
-                    'Invite code: $_inviteCode',
-                    key: const Key('invite-code'),
+                    'Free gifts left today: $sendsLeft',
+                    key: const Key('gifts-left'),
                     style: const TextStyle(
                       fontSize: 18,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  TextButton(
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: _inviteCode!));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Invite code copied.')),
-                      );
-                    },
-                    child: const Text('Copy invite code'),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Pick one tool for today. Sends come from a free pool and do not use your own tools.',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
-                ],
-                const SizedBox(height: 8),
-                if (_loading)
-                  const Center(child: CircularProgressIndicator())
-                else if (_friends.isEmpty)
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      for (final power in Power.values) ...[
+                        if (power != Power.move) const SizedBox(width: 8),
+                        Expanded(
+                          child: _ToolPick(
+                            power: power,
+                            selected: _tool == power,
+                            enabled: day?.tool == null || day!.tool == power,
+                            onPressed: () => setState(() => _tool = power),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   const Text(
-                    'Invite a friend to gift free daily tools.',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                  )
-                else
-                  for (final friend in _friends)
-                    _FriendRow(
-                      friend: friend,
-                      sent: day?.sentFriendIds.contains(friend.id) ?? false,
-                      canSend:
-                          sendsLeft > 0 &&
-                          !(day?.sentFriendIds.contains(friend.id) ?? false),
-                      onSend: () => _send(friend),
-                    ),
-                const SizedBox(height: 18),
-                const Text(
-                  'Gifts for you',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 8),
-                if (_inbox.isEmpty)
-                  const Text(
-                    'No gifts yet today.',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  )
-                else
-                  for (final gift in _inbox)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        '${gift.fromName} sent ${gift.tool.label}',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                    'Invite friends — you both get free boosts.',
+                    key: Key('invite-rewards-copy'),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    key: const Key('invite-friend'),
+                    onPressed: _loading ? null : _invite,
+                    child: const Text('Invite a friend'),
+                  ),
+                  if (_inviteLink != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _inviteLink!,
+                      key: const Key('invite-link'),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
                       ),
-                      subtitle: Text(gift.dayKey),
-                      trailing: gift.claimed
-                          ? const Text(
-                              'Claimed',
-                              style: TextStyle(fontWeight: FontWeight.w800),
-                            )
-                          : FilledButton(
-                              key: Key('claim-${gift.id}'),
-                              onPressed: () => _claim(gift),
-                              child: const Text('Claim'),
-                            ),
                     ),
+                    TextButton(
+                      key: const Key('copy-invite-link'),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: _inviteLink!));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Invite link copied.')),
+                        );
+                      },
+                      child: const Text('Copy invite link'),
+                    ),
+                  ],
+                  if (_inviteCode != null) ...[
+                    Text(
+                      'Invite code: $_inviteCode',
+                      key: const Key('invite-code'),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  if (_loading)
+                    const Center(child: CircularProgressIndicator())
+                  else if (_friends.isEmpty)
+                    const Text(
+                      'Invite a friend to gift free daily tools.',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    )
+                  else
+                    for (final friend in _friends)
+                      _FriendRow(
+                        friend: friend,
+                        sent: day?.sentFriendIds.contains(friend.id) ?? false,
+                        canSend: sendsLeft > 0 &&
+                            !(day?.sentFriendIds.contains(friend.id) ?? false),
+                        onSend: () => _send(friend),
+                      ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Gifts for you',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_inbox.isEmpty)
+                    const Text(
+                      'No gifts yet today.',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    )
+                  else
+                    for (final gift in _inbox)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          '${gift.fromName} sent ${gift.tool.label}',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(gift.dayKey),
+                        trailing: gift.claimed
+                            ? const Text(
+                                'Claimed',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              )
+                            : FilledButton(
+                                key: Key('claim-${gift.id}'),
+                                onPressed: () => _claim(gift),
+                                child: const Text('Claim'),
+                              ),
+                      ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

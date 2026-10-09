@@ -32,8 +32,20 @@ import '../features/iap/data/fake_store_client.dart';
 import '../features/iap/data/iap_api.dart';
 import '../features/iap/domain/iap_verifier.dart';
 import '../features/iap/domain/store_client.dart';
+import '../features/deeplink/application/open_deep_link.dart';
+import '../features/deeplink/data/deferred_link_store.dart';
+import '../features/entitlements/domain/level_gate.dart';
 import '../features/gift/data/fake_gift_adapter.dart';
 import '../features/gift/domain/ports/gift_port.dart';
+import '../features/invite/application/capture_invite.dart';
+import '../features/invite/application/claim_inviter_rewards.dart';
+import '../features/invite/application/settle_invite.dart';
+import '../features/invite/data/invite_directory_store.dart';
+import '../features/invite/data/invite_local_store.dart';
+import '../features/invite/domain/ports/invite_directory.dart';
+import '../features/rate_prompt/data/fake_store_review.dart';
+import '../features/rate_prompt/data/review_ledger_store.dart';
+import '../features/rate_prompt/domain/ports/store_review_port.dart';
 import '../features/identity/application/bootstrap_identity.dart';
 import '../features/identity/application/update_nickname.dart';
 import '../features/identity/data/identity_repository_impl.dart';
@@ -117,8 +129,8 @@ class IdentityController extends Notifier<LocalUser> {
   LocalUser build() => BootstrapIdentity(ref.read(identityRepoProvider)).call();
 
   Future<String?> rename(String raw) async {
-    final result = await UpdateNickname(ref.read(identityRepoProvider))
-        .call(raw);
+    final result =
+        await UpdateNickname(ref.read(identityRepoProvider)).call(raw);
     if (!result.ok) return result.error;
     state = result.user!;
     return null;
@@ -153,7 +165,12 @@ class ProgressController extends Notifier<PlayerProgress> {
     }
   }
 
+  /// Highest cleared level before the latest [clearLevel] write.
+  /// Invite settlement uses it to tell a new player from someone past level 1.
+  int lastClearBefore = 0;
+
   Future<void> clearLevel(int level) async {
+    lastClearBefore = state.highestCleared;
     await ref.read(localRevisionProvider).touch();
     await ClearLevel(ref.read(progressRepoProvider)).call(level);
     await ref.read(authStateProvider.notifier).syncFromCloud();
@@ -181,8 +198,8 @@ class InventoryController extends Notifier<ToolInventory> {
 
 final entitlementsProvider =
     NotifierProvider<EntitlementsController, Entitlements>(
-      EntitlementsController.new,
-    );
+  EntitlementsController.new,
+);
 
 class EntitlementsController extends Notifier<Entitlements> {
   @override
@@ -310,5 +327,91 @@ class AuthController extends Notifier<AuthViewState> {
     ref.read(progressProvider.notifier).reload();
     ref.read(inventoryProvider.notifier).reload();
     ref.read(entitlementsProvider.notifier).reload();
+  }
+}
+
+final inviteDirectoryProvider = Provider<InviteDirectory>(
+  (ref) => InviteDirectoryStore(preferences: ref.watch(prefsProvider)),
+);
+
+final inviteLocalProvider = Provider<InviteLocalStore>(
+  (ref) => InviteLocalStore(ref.watch(prefsProvider)),
+);
+
+final captureInviteProvider = Provider<CaptureInvite>((ref) {
+  return CaptureInvite(
+    directory: ref.watch(inviteDirectoryProvider),
+    local: ref.watch(inviteLocalProvider),
+    identity: ref.watch(identityRepoProvider),
+  );
+});
+
+final settleInviteProvider = Provider<SettleInvite>((ref) {
+  return SettleInvite(
+    directory: ref.watch(inviteDirectoryProvider),
+    local: ref.watch(inviteLocalProvider),
+    identity: ref.watch(identityRepoProvider),
+    inventory: ref.watch(inventoryRepoProvider),
+  );
+});
+
+final claimInviterRewardsProvider = Provider<ClaimInviterRewards>((ref) {
+  return ClaimInviterRewards(
+    directory: ref.watch(inviteDirectoryProvider),
+    inventory: ref.watch(inventoryRepoProvider),
+  );
+});
+
+final deferredLinkProvider = Provider<DeferredLinkStore>(
+  (ref) => DeferredLinkStore(ref.watch(prefsProvider), readClipboard: true),
+);
+
+final openDeepLinkProvider = Provider<OpenDeepLink>((ref) {
+  return OpenDeepLink(
+    deferred: ref.watch(deferredLinkProvider),
+    capture: ref.watch(captureInviteProvider),
+    gate: LevelGate(ref.watch(configProvider)),
+    entitlements: () => ref.read(entitlementsProvider),
+  );
+});
+
+final reviewLedgerProvider = Provider<ReviewLedgerStore>(
+  (ref) => ReviewLedgerStore(ref.watch(prefsProvider)),
+);
+
+final storeReviewProvider = Provider<StoreReviewPort>(
+  (ref) => FakeStoreReview(),
+);
+
+final growthToastProvider = NotifierProvider<GrowthToastController, String?>(
+  GrowthToastController.new,
+);
+
+class GrowthToastController extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void show(String message) {
+    if (message.isEmpty) return;
+    state = message;
+  }
+
+  void clear() => state = null;
+}
+
+final inviteBannerProvider = NotifierProvider<InviteBannerController, bool>(
+  InviteBannerController.new,
+);
+
+class InviteBannerController extends Notifier<bool> {
+  @override
+  bool build() {
+    final local = ref.watch(inviteLocalProvider).load();
+    return local.pendingCode != null && !local.attributed;
+  }
+
+  void refresh() {
+    final local = ref.read(inviteLocalProvider).load();
+    state = local.pendingCode != null && !local.attributed;
   }
 }

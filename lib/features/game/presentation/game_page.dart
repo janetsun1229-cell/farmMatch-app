@@ -11,6 +11,8 @@ import '../../../shared/item_glyph.dart';
 import '../../auth/domain/auth_provider_kind.dart';
 import '../../auth/domain/bind_prompt.dart';
 import '../../auth/presentation/bind_offer_sheet.dart';
+import '../../rate_prompt/domain/review_prompt_gate.dart';
+import '../../rate_prompt/presentation/review_sheet.dart';
 import '../../config/domain/game_config.dart';
 import '../../inventory/domain/tool_inventory.dart';
 import '../domain/game_state.dart';
@@ -146,6 +148,7 @@ class _GamePageState extends ConsumerState<GamePage>
       await _celebrate();
     } else if (status == GameStatus.fail) {
       await _sfx.play('regret');
+      await ref.read(reviewLedgerProvider).noteFail();
     }
   }
 
@@ -153,6 +156,21 @@ class _GamePageState extends ConsumerState<GamePage>
     if (_celebrating) return;
     _celebrating = true;
     await _controller.persistWin();
+    if (!mounted) return;
+    final settled = await ref.read(settleInviteProvider).call(
+          clearedLevel: widget.level,
+          highestClearedBefore:
+              ref.read(progressProvider.notifier).lastClearBefore,
+          now: DateTime.now(),
+        );
+    if (settled.plan.payInvitee) {
+      await ref.read(localRevisionProvider).touch();
+      await ref.read(authStateProvider.notifier).syncFromCloud();
+      if (settled.message.isNotEmpty) {
+        ref.read(growthToastProvider.notifier).show(settled.message);
+      }
+    }
+    final review = await ref.read(reviewLedgerProvider).noteClear(widget.level);
     if (!mounted) return;
     _syncMute();
     await _sfx.play('cheer');
@@ -166,12 +184,48 @@ class _GamePageState extends ConsumerState<GamePage>
       inviteDismissed: auth.inviteDismissed,
     );
     var openFriends = false;
-    if (prompt != BindPromptKind.none) {
+    final showedAuth = prompt != BindPromptKind.none;
+    if (showedAuth) {
       final linked = await _offerBind(prompt);
       openFriends = linked && prompt == BindPromptKind.inviteFriends;
+    } else if (ReviewPromptGate.allow(
+      failed: false,
+      streak: review.streak,
+      firstClearL10: review.firstL10,
+      firstClearL20: review.firstL20,
+      lastShownAt: review.lastShownAt,
+      now: DateTime.now(),
+      rated: review.rated,
+      blockedByAuthSheet: false,
+    )) {
+      await _offerReview();
     }
     if (!mounted) return;
     context.go(openFriends ? '/friends' : '/');
+  }
+
+  Future<void> _offerReview() async {
+    final now = DateTime.now();
+    final rate = await showModalBottomSheet<bool>(
+      context: context,
+      isDismissible: true,
+      enableDrag: true,
+      isScrollControlled: true,
+      backgroundColor: FarmColors.cream,
+      builder: (sheetContext) {
+        return ReviewOfferSheet(
+          onRate: () => Navigator.pop(sheetContext, true),
+          onLater: () => Navigator.pop(sheetContext, false),
+        );
+      },
+    );
+    if (!mounted) return;
+    final ledger = ref.read(reviewLedgerProvider);
+    if (rate == true) {
+      await ref.read(storeReviewProvider).requestReview();
+      await ledger.markRated();
+    }
+    await ledger.markShown(now);
   }
 
   Future<bool> _offerBind(BindPromptKind kind) async {
@@ -186,9 +240,8 @@ class _GamePageState extends ConsumerState<GamePage>
           kind: kind,
           onSkip: () => Navigator.pop(sheetContext, BindSheetResult.skipped),
           onBind: (AuthProviderKind provider) async {
-            final error = await ref
-                .read(authStateProvider.notifier)
-                .bind(provider);
+            final error =
+                await ref.read(authStateProvider.notifier).bind(provider);
             if (error != null) return error;
             if (sheetContext.mounted) {
               Navigator.pop(sheetContext, BindSheetResult.linked);
@@ -392,8 +445,7 @@ class _GamePageState extends ConsumerState<GamePage>
               _Tray(
                 cards: game.tray,
                 capacity: game.trayCapacity,
-                warn:
-                    game.tray.length >= warnAt &&
+                warn: game.tray.length >= warnAt &&
                     game.status == GameStatus.play,
                 slotKeys: _slotKeys,
                 popping: _popping,
@@ -706,8 +758,8 @@ class _Tray extends StatelessWidget {
     final shift = popping ? (mid - index) * 18 * popT : 0.0;
     final scale = popping
         ? 1 +
-              (popScale - 1) *
-                  (popT < 0.45 ? popT / 0.45 : 1 - (popT - 0.45) / 0.55)
+            (popScale - 1) *
+                (popT < 0.45 ? popT / 0.45 : 1 - (popT - 0.45) / 0.55)
         : 1.0;
     return Opacity(
       opacity: popping ? (1 - popT).clamp(0.0, 1.0) : 1,
@@ -844,8 +896,7 @@ class _PowerButton extends StatelessWidget {
     final locked = level < unlock;
     final uses = vm.freeFor(power) + bank.of(power);
     final enabled = !busy && !locked && controller.canUse(power, bank);
-    final flash =
-        vm.flashToken > 0 &&
+    final flash = vm.flashToken > 0 &&
         (power == Power.move || power == Power.shuffle) &&
         enabled;
     return Stack(
@@ -859,18 +910,14 @@ class _PowerButton extends StatelessWidget {
             child: ElevatedButton(
               onPressed: enabled ? () => onUse(power) : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: locked
-                    ? const Color(0xFFCBB892)
-                    : const Color(0xFF2F86EF),
-                disabledBackgroundColor: locked
-                    ? const Color(0xFFCBB892)
-                    : const Color(0xFFB89A72),
-                foregroundColor: locked
-                    ? const Color(0xFF5A4430)
-                    : Colors.white,
-                disabledForegroundColor: locked
-                    ? const Color(0xFF5A4430)
-                    : const Color(0xFF6B5340),
+                backgroundColor:
+                    locked ? const Color(0xFFCBB892) : const Color(0xFF2F86EF),
+                disabledBackgroundColor:
+                    locked ? const Color(0xFFCBB892) : const Color(0xFFB89A72),
+                foregroundColor:
+                    locked ? const Color(0xFF5A4430) : Colors.white,
+                disabledForegroundColor:
+                    locked ? const Color(0xFF5A4430) : const Color(0xFF6B5340),
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -1027,8 +1074,7 @@ class _ConfettiBit extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final swing =
-        (index.isEven ? 1 : -1) *
+    final swing = (index.isEven ? 1 : -1) *
         (18.0 + (index % 5) * 10) *
         math.sin(t * math.pi);
     return Align(
