@@ -1,6 +1,6 @@
 # Farm Match
 
-Portrait triple-match tile game for iOS and Android. Players clear a stacked farm table into a 7-slot tray. Progress, tools, and the guest nickname stay on the device. There is no login and no cloud save.
+Portrait triple-match tile game for iOS and Android. Players clear a stacked farm table into a 7-slot tray. The game starts as a guest and stays playable offline. Linking X or Facebook saves progress, tool counts, and purchases to a cloud record that can be restored on a new install.
 
 ## Run
 
@@ -37,6 +37,13 @@ lib/
   core/           theme, scroll behavior, sound
   features/
     identity/     guest id + editable nickname
+    auth/         optional X or Facebook link (fake OAuth in CI)
+    cloud_save/   sync progress, tools, entitlements when linked
+    gift/         friend invite + daily free tool gifts
+    invite/       bidirectional invite rewards and caps
+    deeplink/     invite / gift / challenge / shop routing
+    rate_prompt/  soft in-app review
+    gift_remind/  receive push, evening reminder, red dots
     progress/     cleared level, mute, hint flags
     inventory/    Move / Undo / Shuffle bank
     entitlements/ remove ads, Barn Bundle, Harvest Bundle
@@ -45,7 +52,7 @@ lib/
     game/         deal, cover, tray, powers
     home/         home-first entry
     store_ui/     Farm Stand
-    settings/     nickname, mute, Restore Purchases
+    settings/     nickname, account, friends, mute, Restore Purchases
   shared/
 ```
 
@@ -58,7 +65,17 @@ Each feature is split into `presentation`, `application`, `domain`, and `data`. 
 - Cards stay at 85% of the level-1 size (`card_scale_vs_l1`). Rotation is 0.
 - Veil opacity follows cover depth: 25%, 35%, 45%, 55%.
 - Unlocked powers start each level with 3 uses. Bought kits add a local bank on top (`power_charge_mode`: `per_level_plus_bank`).
-- Restore Purchases restores only `remove_ads`, `barn_bundle`, and `harvest_bundle`.
+- Restore Purchases restores only `remove_ads`, `barn_bundle`, and `harvest_bundle`. It does not restore level progress or tool counts.
+- After a win on level 5, a skippable sheet offers X or Facebook for cloud save. After a win on level 8, a guest sees that sheet again with friend gifts. There is no forced login.
+- Linked accounts sync cleared level, Move / Undo / Shuffle counts, and the three non-consumable entitlements. Guest play never calls the cloud port.
+- Cloud merge keeps the higher cleared level. Tool counts follow the later `updatedAt` (a tie keeps the larger count of each tool). Entitlements are OR-combined so a purchase is not dropped. Mute, hints, and nickname stay on the device. A fresh install uses an epoch clock, so the cloud row restores the account.
+- Friends: one tool type per day, up to 3 sends from a free pool (your own tools are not spent), and at most one gift from you to the same friend per day.
+- After a friend you invited clears level 1, both of you get Move, Undo, and Shuffle +2. You can be paid for 5 successes a day and 50 in all. Each device and each account is attributed once. A share made before you link an account is `farmmatch://` and does not pay. If you are already at the cap, your friend still gets the boost and the attribution is used up.
+- The inviter's boost waits in a local stub book (`invite_book_v1`) and is granted the next time that account opens the app. Two real devices would need a server; this build shares the book on one install.
+- Deep links use `farmmatch://invite|gift|challenge|shop`. The same paths are accepted as `https://farmmatch.app/<type>` and as a cold-start path such as `/invite?code=`. Shop is reserved and opens the Farm Stand with `?focus=`. A locked challenge stays on the home screen. Cold start parses the link after the guest profile is ready, then navigates. A bad link stays home.
+- Deferred deep link (Firebase Dynamic Links is retired): the first open reads prefs key `install_referrer` once (Play Install Referrer stand-in), then the clipboard once if it looks like `farmmatch://` or `https://farmmatch.app`. iOS Universal Links and Android App Links for `https://farmmatch.app` are the production path once that host publishes the association files. The shipped client registers the `farmmatch` scheme.
+- Soft review: a skippable "Enjoying Farm Match?" sheet after a 3-clear streak or the first clear of level 10 or 20. It never shows after a fail, at most once a calendar day, then not again for 90 days. Rate ends prompts for this install. It waits if a link or invite sheet is already up.
+- Daily reminders: a background gift posts “{name} sent you {tool}! Tap to send one back.” and opens the gift link. The same friend is pushed at most once an hour. Between 19:00 and 21:00 local, one reminder says “Send a boost to a friend today” if you still have a send left and have not sent yet. Home and Friends show a red dot for an unread gift or that reminder. Notification permission is asked after the level 8 invite sheet or the first gift in a session, never on launch. The CI build records pushes on a fake port.
 
 Deals use the HTML prototype’s seeded layout (level id is the seed). `flutter test` checks all 50 deals against `test/fixtures/deals.json` and clears each level by its known solution order.
 

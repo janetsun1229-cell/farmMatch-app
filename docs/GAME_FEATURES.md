@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 文档版本 | v1.0 |
+| 文档版本 | v1.3 |
 | 产品中文名 | 农场配对 |
 | 产品英文名 | Farm Match |
 | 受众 | 产品负责人 birdy、客户端 / 服务端工程师 |
@@ -732,7 +732,6 @@ FailDialog → Home（Home）
 | SOCIAL_GIFT_TYPES | move / undo / shuffle（当日三选一） |
 | SOCIAL_GIFT_SAME_FRIEND_DAILY_RECV_MAX | 1 |
 | SOCIAL_GIFT_FROM_FREE_POOL | true（不扣自己库存） |
-
 
 ### 5.15 邀请、深链与评星
 

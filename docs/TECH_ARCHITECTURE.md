@@ -3,7 +3,8 @@
 > 目标：上架 Apple App Store 与 Google Play。  
 > 客户端：Flutter 一套代码出 iOS / Android。  
 > 后台：腾讯云国际站；**仅**内购验单 + 远程配置（无账号、无云存档）。  
-> 文档版本：v1.1.1｜2026-10-09｜作者：开发
+> 文档版本：v1.1.1｜2026-10-09｜作者：开发  
+> **文首「无账号、无云存档」以文末修订附记 v1.2 为准。** 产品规则见 `GAME_FEATURES.md` §3.7.1 / §3.7.1b / §5.14。游客仍可离线游玩；绑定后才云同步。Restore Purchases 范围不变。
 
 ---
 
@@ -182,6 +183,7 @@
 - 登录用户：进度 / 道具 / 权益云同步；后台新增 auth、cloud save、friends/gift API。
 - 好友每日互赠同种道具最多送出 3 次；详见 `GAME_FEATURES.md` §3.7.1 / §5.14。
 - Restore Purchases 范围不变（仅去广告 + 关卡包）。
+- 客户端合并：`highestCleared` 取较大值；道具次数取 `updatedAt` 较新的一侧（时间相同则每种取较大值）；去广告与关卡包按或合并，避免权益回退。静音、引导、昵称不同步。
 
 ## 修订附记 v1.3（2026-10-09｜策划｜增长）
 
@@ -194,3 +196,4 @@
 
 - 收礼推送（后台）+ 每日 19–21 点未送出提醒（最多 1 条）；App 内红点；深链 `gift`。
 - 通知权限：L8 邀请后或首次收礼再申请。仅 farmMatch-app。
+- 延迟深链实现：Play Install Referrer stub（prefs `install_referrer`）+ 首次启动剪贴板；scheme `farmmatch://`；网页宿主 `https://farmmatch.app`。不使用已停用的 Firebase Dynamic Links。
