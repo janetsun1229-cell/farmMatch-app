@@ -26,5 +26,14 @@ void main() {
     expect(find.text('1'), findsOneWidget);
     expect(find.byKey(const Key('open-settings')), findsOneWidget);
     expect(find.textContaining('Hello,'), findsOneWidget);
+
+    final bar = tester.getSize(find.byKey(const Key('home-play')));
+    expect(bar.width / bar.height, closeTo(560 / 120, 0.02));
+    expect(bar.width, greaterThan(bar.height * 4.5));
+
+    final nickname = tester.getRect(find.byKey(const Key('home-nickname')));
+    final farmer = tester.getRect(find.byKey(const Key('home-farmer')));
+    expect(nickname.overlaps(farmer), isFalse);
+    expect(nickname.bottom, lessThan(farmer.top));
   });
 }

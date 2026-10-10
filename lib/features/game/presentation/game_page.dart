@@ -45,11 +45,13 @@ class _GamePageState extends ConsumerState<GamePage>
   final _stackKey = GlobalKey();
   final _slotKeys = List<GlobalKey>.generate(7, (_) => GlobalKey());
   late final AnimationController _fly;
+  late final AnimationController _land;
   late final AnimationController _pop;
   late final AnimationController _confetti;
   late final SfxPlayer _sfx;
   _Fly? _flying;
   MatchPlan? _popping;
+  int? _landIndex;
   var _busy = false;
   var _celebrating = false;
   var _hintsSent = false;
@@ -59,6 +61,10 @@ class _GamePageState extends ConsumerState<GamePage>
     super.initState();
     final timing = ref.read(configProvider).timing;
     _fly = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: (timing.flySeconds * 1000).round()),
+    );
+    _land = AnimationController(
       vsync: this,
       duration: Duration(milliseconds: (timing.flySeconds * 1000).round()),
     );
@@ -72,6 +78,7 @@ class _GamePageState extends ConsumerState<GamePage>
     );
     _sfx = SfxPlayer();
     _fly.addListener(() => setState(() {}));
+    _land.addListener(() => setState(() {}));
     _pop.addListener(() => setState(() {}));
     _confetti.addListener(() => setState(() {}));
   }
@@ -79,6 +86,7 @@ class _GamePageState extends ConsumerState<GamePage>
   @override
   void dispose() {
     _fly.dispose();
+    _land.dispose();
     _pop.dispose();
     _confetti.dispose();
     _sfx.dispose();
@@ -114,6 +122,23 @@ class _GamePageState extends ConsumerState<GamePage>
     return box.globalToLocal(global);
   }
 
+  Rect _localRect(Rect global) => _local(global.topLeft) & global.size;
+
+  /// Bounding-box center of the three slots being cleared, in stack space.
+  Offset? _sparkAnchor(List<TileCard> tray) {
+    final plan = _popping;
+    if (plan == null) return null;
+    final ids = plan.ids.toSet();
+    final rects = <Rect>[];
+    for (var i = 0; i < tray.length && i < _slotKeys.length; i++) {
+      if (!ids.contains(tray[i].id)) continue;
+      final rect = _slotRect(i);
+      if (rect == null) continue;
+      rects.add(_localRect(rect));
+    }
+    return matchSparkAnchor(rects);
+  }
+
   Future<void> _arrive(TileCard card, Rect? from) async {
     _syncMute();
     final index = _controller.snapshot.game?.tray.length ?? 0;
@@ -131,13 +156,18 @@ class _GamePageState extends ConsumerState<GamePage>
     setState(() => _flying = null);
     final plan = _controller.peek();
     if (plan != null) {
-      setState(() => _popping = plan);
+      setState(() {
+        _popping = plan;
+        _landIndex = null;
+      });
       await _sfx.play('pop');
       await _pop.forward(from: 0);
       if (!mounted) return;
       _controller.commitStrip(plan);
       setState(() => _popping = null);
     } else {
+      setState(() => _landIndex = index);
+      _land.forward(from: 0);
       _controller.commitJudge();
       await _sfx.play('tap');
     }
@@ -328,6 +358,7 @@ class _GamePageState extends ConsumerState<GamePage>
         context.go('/');
       },
       child: SkyBackdrop(
+        scene: 'assets/images/level-bg.jpg',
         child: Scaffold(
           backgroundColor: Colors.transparent,
           body: SafeArea(
@@ -349,7 +380,7 @@ class _GamePageState extends ConsumerState<GamePage>
                   ],
                 ),
                 if (_flying != null) _flyWidget(),
-                if (_popping != null) _sparks(),
+                if (_popping != null) _sparks(vm.game?.tray ?? const []),
                 if (_celebrating || vm.game?.status == GameStatus.win)
                   _confettiLayer(),
                 if (vm.game?.status == GameStatus.fail && !_busy)
@@ -454,6 +485,9 @@ class _GamePageState extends ConsumerState<GamePage>
                 popping: _popping,
                 popT: _pop.value,
                 popScale: config.timing.matchPopScale,
+                landIndex: _landIndex,
+                landT: _land.value,
+                bounceScale: config.timing.trayBounceScale,
               ),
               const SizedBox(height: 10),
               _Powers(
@@ -526,13 +560,15 @@ class _GamePageState extends ConsumerState<GamePage>
     );
   }
 
-  Widget _sparks() {
+  Widget _sparks(List<TileCard> tray) {
+    final origin = _sparkAnchor(tray);
+    if (origin == null) return const SizedBox.shrink();
     final count = ref.read(configProvider).timing.sparkCountMax;
     return IgnorePointer(
       child: Stack(
         children: [
           for (var i = 0; i < count; i++)
-            _Spark(index: i, count: count, t: _pop.value),
+            _Spark(index: i, count: count, t: _pop.value, origin: origin),
         ],
       ),
     );
@@ -701,6 +737,9 @@ class _Tray extends StatelessWidget {
     required this.popping,
     required this.popT,
     required this.popScale,
+    required this.landIndex,
+    required this.landT,
+    required this.bounceScale,
   });
 
   final List<TileCard> cards;
@@ -710,13 +749,26 @@ class _Tray extends StatelessWidget {
   final MatchPlan? popping;
   final double popT;
   final double popScale;
+  final int? landIndex;
+  final double landT;
+  final double bounceScale;
+
+  static const _gap = 4.0;
+  static const _pad = 6.0;
 
   @override
   Widget build(BuildContext context) {
     final popIds = popping?.ids.toSet() ?? const <String>{};
+    final popIndices = <int>[];
+    for (var i = 0; i < cards.length; i++) {
+      if (popIds.contains(cards[i].id)) popIndices.add(i);
+    }
+    final popMid = popIndices.isEmpty
+        ? 0.0
+        : popIndices.reduce((a, b) => a + b) / popIndices.length;
+    final slots = capacity <= 0 ? 7 : capacity;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
-      height: 74,
       decoration: BoxDecoration(
         color: warn ? FarmColors.warn : FarmColors.wood,
         borderRadius: const BorderRadius.vertical(
@@ -728,53 +780,102 @@ class _Tray extends StatelessWidget {
           width: 2,
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      padding: const EdgeInsets.all(_pad),
       child: Row(
         children: [
-          for (var i = 0; i < capacity; i++)
+          for (var i = 0; i < slots; i++) ...[
+            if (i > 0) const SizedBox(width: _gap),
             Expanded(
-              child: Container(
-                key: i < slotKeys.length ? slotKeys[i] : null,
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  color: FarmColors.woodDark,
-                  borderRadius: BorderRadius.horizontal(
-                    left: i == 0 ? const Radius.circular(10) : Radius.zero,
-                    right: i == capacity - 1
-                        ? const Radius.circular(12)
-                        : Radius.zero,
-                  ),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return _SlotWell(
+                      key: i < slotKeys.length ? slotKeys[i] : null,
+                      scale: i == landIndex
+                          ? trayLandScale(landT, bounceScale)
+                          : 1,
+                      child: i < cards.length
+                          ? _slotFace(
+                              i,
+                              cards[i],
+                              popIds,
+                              popMid,
+                              constraints.maxWidth,
+                            )
+                          : null,
+                    );
+                  },
                 ),
-                child: i < cards.length
-                    ? _slotFace(i, cards[i], popIds)
-                    : const SizedBox.shrink(),
               ),
             ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _slotFace(int index, TileCard card, Set<String> popIds) {
-    final popping = popIds.contains(card.id);
-    final mid = popping ? (popIds.length - 1) / 2 : index.toDouble();
-    final shift = popping ? (mid - index) * 18 * popT : 0.0;
-    final scale = popping
+  Widget _slotFace(
+    int index,
+    TileCard card,
+    Set<String> popIds,
+    double popMid,
+    double slot,
+  ) {
+    final clearing = popIds.contains(card.id);
+    final gather = clearing ? (popT < 0.35 ? popT / 0.35 : 1.0) : 0.0;
+    final shift = clearing ? (popMid - index) * slot * gather : 0.0;
+    final scale = clearing
         ? 1 +
             (popScale - 1) *
                 (popT < 0.45 ? popT / 0.45 : 1 - (popT - 0.45) / 0.55)
         : 1.0;
+    final glyph = slot * 0.86;
     return Opacity(
-      opacity: popping ? (1 - popT).clamp(0.0, 1.0) : 1,
+      opacity: clearing ? (1 - popT).clamp(0.0, 1.0) : 1,
       child: Transform.translate(
-        offset: Offset(shift, popping ? -16 * popT : 0),
+        offset: Offset(shift, clearing ? -16 * popT : 0),
         child: Transform.scale(
           scale: scale,
-          child: ItemGlyph(type: card.type, padding: const EdgeInsets.all(4)),
+          child: Center(
+            child: SizedBox(
+              width: glyph,
+              height: glyph,
+              child: ItemGlyph(type: card.type),
+            ),
+          ),
         ),
       ),
     );
   }
+}
+
+class _SlotWell extends StatelessWidget {
+  const _SlotWell({super.key, required this.scale, required this.child});
+
+  final double scale;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.scale(
+      scale: scale,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: FarmColors.cream,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFC4A06A), width: 1.5),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+double trayLandScale(double t, double peak) {
+  if (t <= 0 || t >= 1) return 1;
+  if (t < 0.45) return 1 + (peak - 1) * (t / 0.45);
+  return peak + (1 - peak) * ((t - 0.45) / 0.55);
 }
 
 class _HoldChip extends StatelessWidget {
@@ -1024,40 +1125,45 @@ class _FlashState extends State<_Flash> with SingleTickerProviderStateMixin {
 }
 
 class _Spark extends StatelessWidget {
-  const _Spark({required this.index, required this.count, required this.t});
+  const _Spark({
+    required this.index,
+    required this.count,
+    required this.t,
+    required this.origin,
+  });
 
   final int index;
   final int count;
   final double t;
+  final Offset origin;
 
   @override
   Widget build(BuildContext context) {
     final angle = (math.pi * 2 * index) / count;
     final dist = (28 + (index % 3) * 12) * t;
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Transform.translate(
-        offset: Offset(math.cos(angle) * dist, -80 + math.sin(angle) * dist),
-        child: Opacity(
-          opacity: (1 - t).clamp(0, 1),
-          child: index.isEven
-              ? const Image(
-                  image: AssetImage('assets/images/ui/star-spark.png'),
-                  width: 18,
-                  height: 18,
-                )
-              : Container(
-                  width: 10,
-                  height: 10,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFFD84A),
-                    shape: BoxShape.circle,
-                  ),
-                ),
+    const size = 18.0;
+    return Positioned(
+      left: origin.dx - size / 2 + math.cos(angle) * dist,
+      top: origin.dy - size / 2 + math.sin(angle) * dist,
+      child: Opacity(
+        opacity: (1 - t).clamp(0, 1),
+        child: const Image(
+          image: AssetImage('assets/images/ui/star-spark.png'),
+          width: size,
+          height: size,
         ),
       ),
     );
   }
+}
+
+/// Center of the box around [slots]. Null when nothing is clearing.
+Offset? matchSparkAnchor(Iterable<Rect> slots) {
+  Rect? box;
+  for (final slot in slots) {
+    box = box == null ? slot : box.expandToInclude(slot);
+  }
+  return box?.center;
 }
 
 class _ConfettiBit extends StatelessWidget {

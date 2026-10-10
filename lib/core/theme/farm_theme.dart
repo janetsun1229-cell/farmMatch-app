@@ -48,25 +48,39 @@ ThemeData buildFarmTheme() {
 }
 
 class SkyBackdrop extends StatelessWidget {
-  const SkyBackdrop({super.key, required this.child});
+  const SkyBackdrop({super.key, required this.child, this.scene});
 
   final Widget child;
+
+  /// Farm scene painted with [BoxFit.cover]. Home and play pass the level
+  /// background; other screens keep the sky gradient.
+  final String? scene;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            FarmColors.skyTop,
-            FarmColors.sky,
-            Color(0xFFB7E38A),
-            FarmColors.grass
-          ],
-          stops: [0, 0.42, 0.72, 1],
-        ),
+      decoration: BoxDecoration(
+        color: FarmColors.sky,
+        image: scene == null
+            ? null
+            : DecorationImage(
+                image: AssetImage(scene!),
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+              ),
+        gradient: scene == null
+            ? const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  FarmColors.skyTop,
+                  FarmColors.sky,
+                  Color(0xFFB7E38A),
+                  FarmColors.grass
+                ],
+                stops: [0, 0.42, 0.72, 1],
+              )
+            : null,
       ),
       child: child,
     );
