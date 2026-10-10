@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,14 +25,16 @@ class HomePage extends ConsumerWidget {
     final locked = !snapshot.access.allowed;
     final invited = ref.watch(inviteBannerProvider);
     final giftDot = ref.watch(giftRemindProvider).showDot;
+    final width = MediaQuery.sizeOf(context).width;
     return GrowthToastListener(
       child: SkyBackdrop(
+        scene: 'assets/images/level-bg.jpg',
         child: Scaffold(
           backgroundColor: Colors.transparent,
           body: SafeArea(
             child: Stack(
               children: [
-                const Positioned(left: 0, bottom: 120, child: _Farmer()),
+                const Positioned(left: 0, bottom: 0, child: _Farmer()),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                   child: Column(
@@ -74,9 +78,19 @@ class HomePage extends ConsumerWidget {
                       const SizedBox(height: 4),
                       Image.asset(
                         'assets/images/home-title.png',
-                        width: 420,
+                        width: math.min(420, width - 32),
                         fit: BoxFit.contain,
                         semanticLabel: 'Farm Match',
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Hello, ${snapshot.user.nickname}',
+                        key: const Key('home-nickname'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: FarmColors.ink),
                       ),
                       if (snapshot.progress.clearedAll)
                         Padding(
@@ -88,14 +102,6 @@ class HomePage extends ConsumerWidget {
                           ),
                         ),
                       const Spacer(),
-                      Text(
-                        'Hello, ${snapshot.user.nickname}',
-                        style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: FarmColors.ink),
-                      ),
-                      const SizedBox(height: 12),
                       if (invited) ...[
                         const Text(
                           'Invite saved. Clear level 1 — you both get free boosts.',
@@ -147,59 +153,49 @@ class _PlayButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: locked ? 'Level $level locked' : 'Play level $level',
-      child: GestureDetector(
-        key: const Key('home-play'),
-        onTap: onPressed,
-        child: Container(
-          width: 108,
-          height: 108,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            gradient: const RadialGradient(
-              center: Alignment(-0.3, -0.4),
-              colors: [
-                Color(0xFFF3FFB0),
-                Color(0xFF7CF25A),
-                Color(0xFF2FD048),
-                Color(0xFF12A032)
-              ],
-              stops: [0, 0.28, 0.62, 1],
-            ),
-            boxShadow: const [
-              BoxShadow(color: Color(0xFF0A6A20), offset: Offset(0, 6)),
-              BoxShadow(
-                  color: Color(0x44002800),
-                  offset: Offset(0, 10),
-                  blurRadius: 12),
-            ],
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Text(
-                '$level',
-                style: const TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  shadows: [
-                    Shadow(color: Color(0xFF146B28), offset: Offset(0, 2))
-                  ],
-                ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final barWidth = math.min(560.0, constraints.maxWidth);
+          final barHeight = barWidth * 120 / 560;
+          return GestureDetector(
+            key: const Key('home-play'),
+            onTap: onPressed,
+            child: Container(
+              width: barWidth,
+              height: barHeight,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2FBE45),
+                borderRadius: BorderRadius.circular(barHeight * 0.28),
+                boxShadow: const [
+                  BoxShadow(color: Color(0xFF0A6A20), offset: Offset(0, 6)),
+                ],
               ),
-              if (locked)
-                const Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Image(
-                      image: AssetImage('assets/images/ui/power-lock.png'),
-                      width: 28,
-                      height: 28),
-                ),
-            ],
-          ),
-        ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Text(
+                    '$level',
+                    style: TextStyle(
+                      fontSize: barHeight * 0.42,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      height: 1,
+                    ),
+                  ),
+                  if (locked)
+                    const Positioned(
+                      right: 18,
+                      child: Image(
+                          image: AssetImage('assets/images/ui/power-lock.png'),
+                          width: 28,
+                          height: 28),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -231,7 +227,7 @@ class _FarmerState extends State<_Farmer> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
+    final width = math.min(MediaQuery.sizeOf(context).width * 0.42, 200.0);
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -245,7 +241,9 @@ class _FarmerState extends State<_Farmer> with SingleTickerProviderStateMixin {
       },
       child: Image.asset(
         'assets/images/home-farmer.png',
-        width: width.clamp(0, 480) * 0.46,
+        key: const Key('home-farmer'),
+        width: width,
+        height: width * 640 / 647,
         fit: BoxFit.contain,
       ),
     );

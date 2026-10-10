@@ -27,6 +27,7 @@ flutter:
     - assets/config/default_config.json
     - assets/images/home-title.png
     - assets/images/home-farmer.png
+    - assets/images/level-bg.jpg
     - assets/images/items/
     - assets/images/ui/
     - assets/audio/
